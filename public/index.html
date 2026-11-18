@@ -23,6 +23,7 @@
       <h1 class="logo">FRAGOUT<span class="io">.IO</span></h1>
       <p class="tag">ARCADE ARENA · 1V1 · 2V2</p>
       <span class="test-badge" id="test-badge" hidden>TEST BUILD</span>
+      <div id="net-badge" class="connecting">CONNECTING…</div>
     </div>
     <div class="menu">
       <button class="mi" data-go="mode"><span>PLAY</span><span class="hint">find a match</span></button>
@@ -38,12 +39,15 @@
   <div class="menu-col" style="max-width: 640px">
     <div>
       <h2 class="title">CHOOSE MODE</h2>
-      <p class="sub">Warm up on the practice range while we find your match.</p>
+      <p class="sub">Warm up on the practice range while we find your match. Playing with a friend? Both type the same party code to be on the same team.</p>
     </div>
     <div class="cards">
       <button class="mi card" data-mode="1v1"><span class="big">1V1</span><span>DUEL</span><span class="desc">You against one rival. First to 3 rounds.</span></button>
       <button class="mi card" data-mode="2v2"><span class="big">2V2</span><span>SQUADS</span><span class="desc">Team up. Last team standing takes the round.</span></button>
       <button class="mi card" data-mode="extraction"><span class="big">4V4</span><span>EXTRACTION</span><span class="desc">Attackers steal the gem from the middle (3 s) and carry it home. Defenders stop them. 3 minutes a round, sides swap.</span></button>
+    </div>
+    <div class="rows" style="max-width: 520px">
+      <div class="mi row" data-party><span class="label">PARTY CODE</span><input id="party-input" maxlength="12" placeholder="OPTIONAL" autocomplete="off" spellcheck="false"></div>
     </div>
     <div class="menu"><button class="mi small" data-go="title"><span>BACK</span></button></div>
   </div>

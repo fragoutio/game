@@ -392,6 +392,7 @@
   const nameInput = $('name-input');
 
   function show(name) {
+    if (name === 'title' && typeof ws !== 'undefined' && ws && ws.readyState === 1 && netMode !== 'online') { netMode = 'online'; netBadge(); }   // server came up while you played offline
     if (name !== 'game' && name !== 'practice' && typeof cancelAim === 'function' && match) cancelAim();
     for (const s of MENU_SCREENS) $('screen-' + s).hidden = s !== name;
     ui = name; sel = 0;
@@ -411,8 +412,9 @@
     const it = items();
     it.forEach((e, i) => e.classList.toggle('sel', i === sel));
     const cur = it[sel];
-    if (cur && cur.hasAttribute('data-name')) nameInput.focus();
-    else if (document.activeElement === nameInput) { nameInput.blur(); canvas.focus(); }
+    const box = cur && cur.querySelector('input');
+    if (box) box.focus();
+    else if (document.activeElement && document.activeElement.tagName === 'INPUT') { document.activeElement.blur(); canvas.focus(); }
   }
   function menuAction(action) {
     const it = items(); if (!it.length) return;
@@ -446,7 +448,7 @@
     const el = e.target.closest('.mi'); if (!el) return;
     const i = items().indexOf(el); if (i < 0) return;
     sel = i; highlight();
-    if (!el.hasAttribute('data-name')) activate(el);
+    if (!el.querySelector('input')) activate(el);
   });
   document.addEventListener('mouseover', e => {
     const el = e.target.closest && e.target.closest('.mi'); if (!el) return;
@@ -480,6 +482,12 @@
       val.append(name, r);
     }
   }
+  const partyInput = $('party-input');
+  partyInput.value = profile.party || '';
+  partyInput.addEventListener('input', () => {
+    profile.party = partyInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12);
+    partyInput.value = profile.party; store.set('profile', profile);
+  });
   nameInput.addEventListener('input', () => {
     profile.name = nameInput.value.replace(/[^\w \-]/g, '').slice(0, 12).toUpperCase();
     nameInput.value = profile.name; store.set('profile', profile);
@@ -497,7 +505,7 @@
   const BLOCK = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'Tab', 'Backspace']);
   addEventListener('keydown', e => {
     ac();
-    if (document.activeElement === nameInput) {
+    if (document.activeElement && document.activeElement.tagName === 'INPUT') {
       if (['ArrowUp', 'ArrowDown', 'Enter', 'NumpadEnter', 'Escape', 'Tab'].includes(e.code)) {
         e.preventDefault();
         menuAction(e.code === 'ArrowUp' ? 'up' : 'down');
@@ -555,25 +563,44 @@
   });
 
   // ---------- Network ----------
-  let ws = null, connected = false, send;
-  if (LOCAL) {
-    Core.start({ botFillMs: window.FRAGOUT_BOT_FILL_MS });
-    const conn = Core.connect(msg => setTimeout(() => onMessage(msg), 0));
-    send = msg => conn.receive(JSON.parse(JSON.stringify(msg)));
+  // Online: a WebSocket to the game server (the page's own host, or FRAGOUT_SERVER for the GitHub Pages build,
+  // or ?server=wss://... in the address). If no server answers, play offline: the game core runs in this page
+  // and bots fill the lobby. Matches started online stay online; the badge on the title screen shows which.
+  const params = new URLSearchParams(location.search);
+  const SERVER = params.get('server') || window.FRAGOUT_SERVER || (LOCAL ? '' : `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`);
+  let ws = null, connected = false, netMode = SERVER ? 'connecting' : 'offline', onlineCount = 0, localConn = null, inOnlineMatch = false;
+  function goOffline() {
+    if (!localConn) {
+      Core.start({ botFillMs: window.FRAGOUT_BOT_FILL_MS || 30000 });
+      localConn = Core.connect(msg => setTimeout(() => onMessage(msg), 0));
+    }
     connected = true;
-    $('test-badge').hidden = !!window.FRAGOUT_HIDE_BADGE;   // the school (GitHub Pages) build hides it
-  } else {
+  }
+  function netBadge() {
+    const b = $('net-badge');
+    b.className = netMode;
+    b.textContent = netMode === 'online' ? `ONLINE · ${onlineCount} PLAYER${onlineCount === 1 ? '' : 'S'}` : netMode === 'connecting' ? 'CONNECTING TO SERVER…' : 'OFFLINE · BOTS ONLY';
+  }
+  const send = msg => {
+    if (netMode === 'online' && ws && ws.readyState === 1) ws.send(JSON.stringify(msg));
+    else if (localConn) localConn.receive(JSON.parse(JSON.stringify(msg)));
+  };
+  if (LOCAL) { $('test-badge').hidden = !!window.FRAGOUT_HIDE_BADGE || !!SERVER; goOffline(); }
+  if (SERVER) {
+    let tries = 0;
     const connect = () => {
-      ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`);
-      ws.onopen = () => { connected = true; };
+      try { ws = new WebSocket(SERVER); } catch { netMode = LOCAL ? 'offline' : 'connecting'; netBadge(); return; }
+      ws.onopen = () => { connected = true; tries = 0; if (!(match && !inOnlineMatch && ui !== 'title')) netMode = 'online'; netBadge(); };
       ws.onclose = () => {
-        connected = false;
-        if (ui === 'practice' || ui === 'game' || ui === 'pause') { stopPractice(); clearMatch(); show('title'); toast('Lost connection to the server'); }
-        setTimeout(connect, 1500);
+        const wasOnline = netMode === 'online';
+        if (wasOnline) netMode = LOCAL ? 'offline' : 'connecting';
+        if (!LOCAL) connected = false;
+        if (wasOnline && inOnlineMatch && (ui === 'practice' || ui === 'game' || ui === 'pause' || ui === 'end')) { stopPractice(); clearMatch(); show('title'); toast('Lost connection to the server'); }
+        // free servers sleep when nobody plays: the first connection can take up to a minute to wake it
+        netBadge(); setTimeout(connect, Math.min(10000, 1500 + 1000 * tries++));
       };
-      ws.onmessage = e => onMessage(JSON.parse(e.data));
+      ws.onmessage = e => { const m = JSON.parse(e.data); if (m.t === 'online') { onlineCount = m.n; netBadge(); return; } onMessage(m); };
     };
-    send = msg => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg)); };
     connect();
   }
 
@@ -583,7 +610,8 @@
     if (!connected) { toast('Connecting to the server…'); return; }
     clearMatch();
     lastMode = mode; queueInfo = null; queueStart = performance.now();
-    send({ t: 'queue', mode, name: profile.name || 'PLAYER', look: profile.look });
+    inOnlineMatch = netMode === 'online';
+    send({ t: 'queue', mode, name: profile.name || 'PLAYER', look: profile.look, party: profile.party || '' });
     $('pb-mode').textContent = { '1v1': '1V1 DUEL', '2v2': '2V2 SQUADS', extraction: '4V4 EXTRACTION' }[mode];
     startPractice();
   }
@@ -1389,6 +1417,7 @@
   }
   // which version is this? (shown small on the title and pause screens)
   $('build-tag').textContent = 'build ' + (window.FRAGOUT_BUILD || 'dev');
+  netBadge();
   refreshSettings();
   requestAnimationFrame(frame);
 })();

@@ -18,6 +18,19 @@ three.js is served from `node_modules`, so the online build needs no CDN access.
 
 Env vars: `PORT` (default 8123), `BOT_FILL_MS` (default 30000).
 
+## Online play (two or more computers)
+
+The game server (`server.js`) runs matchmaking for everyone connected. Host it for free on Render:
+
+1. Open https://render.com/deploy?repo=https://github.com/OutlandishDal/fragout-io and sign in with GitHub.
+2. Approve the `fragout-io` web service (from `render.yaml`). Render gives it an address like `https://fragout-io.onrender.com`.
+3. Put that address (as `wss://...`) in `server.config.json` and push: the GitHub Pages site then connects to it.
+
+The title screen shows ONLINE · n players, or OFFLINE · BOTS ONLY when no server answers (the game then runs in
+the page with bots). Free Render servers sleep after 15 minutes without players; the first visit wakes it up
+(up to about a minute). Queue the same mode at the same time to play each other; type the same party code
+(Play screen) to be on the same team. You can also test any server with `?server=wss://...` in the address.
+
 ## Offline builds (bots only)
 
 Both run the game core inside the page (no server): you play the practice range while "searching", and

@@ -13,6 +13,9 @@ const target = process.argv[2] || 'pages';
 let commit = 'dev';
 try { commit = require('child_process').execSync('git rev-parse --short HEAD', { cwd: __dirname, encoding: 'utf8' }).trim(); } catch { /* not a git checkout */ }
 const BUILD = `${commit} · ${new Date().toISOString().slice(0, 10)}`;
+// online server for the GitHub Pages build (server.config.json, or the FRAGOUT_SERVER environment variable)
+let SERVER_URL = process.env.FRAGOUT_SERVER || '';
+try { SERVER_URL = SERVER_URL || JSON.parse(fs.readFileSync(path.join(__dirname, 'server.config.json'), 'utf8')).server || ''; } catch { /* none */ }
 const pub = f => fs.readFileSync(path.join(__dirname, 'public', f), 'utf8');
 const safe = js => js.replace(/<\/script/gi, '<\\/script');
 const threeDir = path.join(__dirname, 'node_modules', 'three');
@@ -22,7 +25,7 @@ const index = pub('index.html');
 const ui = index.slice(index.indexOf('<!--UI-START-->') + 15, index.indexOf('<!--UI-END-->'));
 const FONTS = '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Chakra+Petch:wght@400;600;700&display=swap">';
 const scripts = threeTag => `${threeTag}
-<script>window.FRAGOUT_LOCAL = true; window.FRAGOUT_BOT_FILL_MS = 30000; window.FRAGOUT_HIDE_BADGE = ${target === 'pages'}; window.FRAGOUT_BUILD = '${BUILD}';</script>
+<script>window.FRAGOUT_LOCAL = true; window.FRAGOUT_BOT_FILL_MS = 30000; window.FRAGOUT_HIDE_BADGE = ${target === 'pages'}; window.FRAGOUT_BUILD = '${BUILD}'; window.FRAGOUT_SERVER = ${JSON.stringify(target === 'pages' ? SERVER_URL : '')};</script>
 <script>
 ${safe(pub('core.js'))}
 </script>

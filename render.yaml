@@ -1,0 +1,12 @@
+# One-click hosting for the fragout.io game server on Render (free plan).
+# Deploy: https://render.com/deploy?repo=https://github.com/OutlandishDal/fragout-io
+# The GitHub Pages site (school link) connects to this server for online play (see server.config.json).
+services:
+  - type: web
+    name: fragout-io
+    runtime: node
+    plan: free
+    buildCommand: npm ci
+    startCommand: node server.js
+    healthCheckPath: /health
+    autoDeploy: true

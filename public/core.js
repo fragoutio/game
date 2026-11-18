@@ -299,10 +299,22 @@ function startMatch(mode, clients) {
   const size = MODES[mode];
   const used = new Set(clients.map(c => c.name.toUpperCase()));
   const botName = () => { let n, tries = 0; do n = BOT_NAMES[(Math.random() * BOT_NAMES.length) | 0]; while (used.has(n) && ++tries < 50); used.add(n); return n; };
+  // Teams: friends with the same party code go on the same team; everyone else is spread so humans
+  // face each other first. Bots fill whatever slots are left.
+  const per = size / 2, slots = { A: [], B: [] };
+  const groups = [];
+  for (const c of clients) { const g = c.party && groups.find(x => x.code === c.party); if (g) g.list.push(c); else groups.push({ code: c.party, list: [c] }); }
+  groups.sort((a, b) => b.list.length - a.list.length);
+  for (const g of groups) for (const c of g.list) {
+    let team = slots.A.length <= slots.B.length ? 'A' : 'B';
+    const mate = g.list.find(o => o !== c && (slots.A.includes(o) || slots.B.includes(o)));
+    if (mate) team = slots.A.includes(mate) ? 'A' : 'B';
+    if (slots[team].length >= per) team = team === 'A' ? 'B' : 'A';
+    slots[team].push(c);
+  }
   const players = [];
-  for (let i = 0; i < size; i++) {
-    const team = i % 2 === 0 ? 'A' : 'B'; // humans alternate teams so they face each other first
-    const c = clients[i];
+  for (const team of ['A', 'B']) for (let i = 0; i < per; i++) {
+    const c = slots[team][i];
     players.push(makePlayer(team, c ? c.name : botName(), c || null, c ? c.look : null));
   }
   const match = { mode, players, events: [], projectiles: [], fires: [], nextProj: 1, broken: new Set(), panelHp: new Map(), score: { A: 0, B: 0 }, round: 0, phase: 'countdown', phaseT: 120, tick: 0, over: false };
@@ -1008,6 +1020,7 @@ function connect(sendFn) {
         dequeue(client);
         client.name = String(msg.name || 'Player').replace(/[^\w \-]/g, '').slice(0, 12) || 'Player';
         client.queued = msg.mode; client.queuedAt = Date.now(); client.look = msg.look;
+        client.party = String(msg.party || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12);   // same code = same team
         queues[msg.mode].push(client);
         matchmake();
       } else if (msg.t === 'cancel') dequeue(client);
