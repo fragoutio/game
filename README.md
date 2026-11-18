@@ -1,6 +1,6 @@
 # fragout.io
 
-**Play now (bots, works on school networks):** https://outlandishdal.github.io/fragout-io/
+**Play now (bots, works on school networks):** https://fragoutio.github.io/game/
 
 Low-poly first-person arcade arena shooter, keyboard-only (or gamepad): 1v1 or 2v2 in a small neon room with cover.
 Characters are built like the Shred Summit riders (puffy jacket, baggy pants, goggles and headgear)
@@ -22,7 +22,7 @@ Env vars: `PORT` (default 8123), `BOT_FILL_MS` (default 30000).
 
 The game server (`server.js`) runs matchmaking for everyone connected. Host it for free on Render:
 
-1. Open https://render.com/deploy?repo=https://github.com/OutlandishDal/fragout-io and sign in with GitHub.
+1. Open https://render.com/deploy?repo=https://github.com/fragoutio/game and sign in with GitHub.
 2. Approve the `fragout-io` web service (from `render.yaml`). Render gives it an address like `https://fragout-io.onrender.com`.
 3. Put that address (as `wss://...`) in `server.config.json` and push: the GitHub Pages site then connects to it.
 
@@ -38,7 +38,7 @@ bots fill the lobby after 30 seconds.
 
 - `npm run build:pages` → `site/` (index.html + its own copy of three.js, no CDN). Deployed to GitHub Pages
   automatically by `.github/workflows/pages.yml` on every push to `main`:
-  https://outlandishdal.github.io/fragout-io/
+  https://fragoutio.github.io/game/
 - `npm run build:test` → `dist/fragout-test.html`, a single file for the claude.ai test artifact
   (loads three.js from jsDelivr): https://claude.ai/artifact/8fYtnRiNUw1pyG9wHHECnw
 
