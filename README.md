@@ -28,8 +28,10 @@ The game server (`server.js`) runs matchmaking for everyone connected. Host it f
 
 The title screen shows ONLINE · n players, or OFFLINE · BOTS ONLY when no server answers (the game then runs in
 the page with bots). Free Render servers sleep after 15 minutes without players; the first visit wakes it up
-(up to about a minute). Queue the same mode at the same time to play each other; type the same party code
-(Play screen) to be on the same team. You can also test any server with `?server=wss://...` in the address.
+(up to about a minute). Queue the same mode at the same time to play each other. To team up, pick PARTY on the title screen:
+one player creates a party and reads out the 5-letter code, friends type it under JOIN CODE (up to 4). Everyone in
+the party stands next to you in the menu with their name tag, and when the leader (★) picks a mode the whole
+party is queued together on the same team. You can also test any server with `?server=wss://...` in the address.
 
 ## Offline builds (bots only)
 

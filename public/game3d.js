@@ -387,7 +387,7 @@
   function flashClass(el, cls, ms) { el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); clearTimeout(el._t); el._t = setTimeout(() => el.classList.remove(cls), ms); }
 
   // ---------- Screens & keyboard menu navigation ----------
-  const MENU_SCREENS = ['title', 'mode', 'locker', 'controls', 'settings', 'pause', 'end'];
+  const MENU_SCREENS = ['title', 'mode', 'party', 'locker', 'controls', 'settings', 'pause', 'end'];
   let ui = 'loading', sel = 0, lastMode = '1v1';
   const nameInput = $('name-input');
 
@@ -403,11 +403,12 @@
     $('build-tag').hidden = !(name === 'title' || name === 'pause' || name === 'settings');
     pedestal.visible = !inMatch && name !== 'end';
     if (name === 'locker') refreshLocker();
+    if (name === 'party' || name === 'title' || name === 'mode') refreshParty();
     if (name === 'settings') refreshSettings();
     if (name === 'title' || name === 'mode') clearMatchIfOver();
     highlight();
   }
-  const items = () => (MENU_SCREENS.includes(ui) ? [...$('screen-' + ui).querySelectorAll('.mi')] : []);
+  const items = () => (MENU_SCREENS.includes(ui) ? [...$('screen-' + ui).querySelectorAll('.mi')].filter(e => !e.closest('[hidden]')) : []);
   function highlight() {
     const it = items();
     it.forEach((e, i) => e.classList.toggle('sel', i === sel));
@@ -434,9 +435,13 @@
     else if (el.dataset.opt || el.dataset.set) { cycle(el, 1); sfx.move(); }
     else if (el.hasAttribute('data-name')) nameInput.focus();
     else if (el.hasAttribute('data-cancel')) cancelQueue();
+    else if (el.hasAttribute('data-pcreate')) partyCreate();
+    else if (el.hasAttribute('data-pjoin')) $('party-input').focus();
+    else if (el.hasAttribute('data-pleave')) { sfx.back(); send({ t: 'party_leave' }); }
+    else if (el.hasAttribute('data-pplay')) { sfx.select(); show('mode'); }
     else if (el.hasAttribute('data-resume')) { sfx.back(); show('game'); }
     else if (el.hasAttribute('data-forfeit')) forfeit();
-    else if (el.hasAttribute('data-again')) { sfx.select(); queueFor(lastMode); }
+    else if (el.hasAttribute('data-again')) { sfx.select(); if (party && party.code && !party.leader) show('party'); else queueFor(lastMode); }
   }
   function back() {
     if (ui === 'practice') cancelQueue();
@@ -460,7 +465,7 @@
     if (el.dataset.opt) {
       const k = el.dataset.opt, n = Chars.LOOKS[k].length;
       profile.look[k] = ((profile.look[k] | 0) + d + n) % n;
-      store.set('profile', profile); rebuildShowcase(); refreshLocker();
+      store.set('profile', profile); rebuildShowcase(); refreshLocker(); profileChanged();
     } else if (el.dataset.set) {
       const k = el.dataset.set;
       if (k === 'quality') { const q = ['low', 'medium', 'high']; settings.quality = q[(q.indexOf(settings.quality) + d + 3) % 3]; resize(); }
@@ -483,15 +488,106 @@
     }
   }
   const partyInput = $('party-input');
-  partyInput.value = profile.party || '';
-  partyInput.addEventListener('input', () => {
-    profile.party = partyInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12);
-    partyInput.value = profile.party; store.set('profile', profile);
-  });
+  partyInput.addEventListener('input', () => { partyInput.value = partyInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5); });
   nameInput.addEventListener('input', () => {
     profile.name = nameInput.value.replace(/[^\w \-]/g, '').slice(0, 12).toUpperCase();
     nameInput.value = profile.name; store.set('profile', profile);
+    profileChanged();
   });
+
+  // ---------- Party ----------
+  // party = { code, members: [{name, look, leader}], you, leader } from the server, or null
+  let party = null;
+  const partyOnline = () => netMode === 'online' && ws && ws.readyState === 1;
+  function partyCreate() {
+    if (!partyOnline()) { sfx.denied(); toast('Parties need the online server (it may still be waking up)'); return; }
+    sfx.select(); send({ t: 'party_create', name: profile.name || 'PLAYER', look: profile.look });
+  }
+  function partyJoin() {
+    const code = partyInput.value.trim();
+    if (!code) { sfx.denied(); toast('Type your friend\'s party code first'); return; }
+    if (!partyOnline()) { sfx.denied(); toast('Parties need the online server (it may still be waking up)'); return; }
+    sfx.select(); send({ t: 'party_join', code, name: profile.name || 'PLAYER', look: profile.look });
+  }
+  let profileTimer = 0;
+  function profileChanged() {
+    if (!party) return;
+    clearTimeout(profileTimer);
+    profileTimer = setTimeout(() => send({ t: 'hello', name: profile.name || 'PLAYER', look: profile.look }), 300);
+  }
+  function refreshParty() {
+    const inP = !!(party && party.code);
+    $('party-code').hidden = !inP;
+    if (inP) $('party-code').querySelector('b').textContent = party.code;
+    const list = $('party-list'); list.innerHTML = '';
+    if (inP) party.members.forEach((m, i) => {
+      const row = document.createElement('div'); row.className = 'pm';
+      if (m.leader) { const c = document.createElement('span'); c.className = 'crown'; c.textContent = '★'; row.appendChild(c); }
+      const n = document.createElement('span'); n.textContent = m.name; row.appendChild(n);
+      if (i === party.you) { const y = document.createElement('span'); y.className = 'you'; y.textContent = '(YOU)'; row.appendChild(y); }
+      list.appendChild(row);
+    });
+    $('party-sub').textContent = inP
+      ? (party.leader ? 'Tell your friends this code. When everyone is in, pick PLAY: the whole party joins the match on your team.'
+        : 'You\'re in! Wait here: when the leader (★) starts a match, you join it automatically.')
+      : 'Create a party and tell your friends the code, or type a friend\'s code to join. Up to 4 players.';
+    document.querySelector('[data-pcreate]').hidden = inP;
+    document.querySelector('[data-pleave]').hidden = !inP;
+    document.querySelector('[data-pplay]').hidden = !(inP && party.leader);
+    $('party-hint').textContent = inP ? `${party.members.length} IN PARTY · ${party.code}` : 'play with friends';
+    $('mode-sub').textContent = inP && party.members.length > 1
+      ? `Your party of ${party.members.length} joins this match together, on the same team.`
+      : 'Warm up on the practice range while we find your match.';
+    if (ui === 'party' || ui === 'title' || ui === 'mode') { sel = Math.max(0, Math.min(sel, items().length - 1)); highlight(); }
+    rebuildPartyShow();
+  }
+
+  // friends stand on their own pedestals next to yours in the menus, with name tags
+  const partyShow = [];   // { root (pedestal group), ch, label }
+  const PARTY_SPOTS = [[1.7, -1.1], [-1.7, -1.1], [3.2, -2.3]];
+  const myTag = (() => { const el = document.createElement('div'); el.className = 'nl menu-tag'; el.innerHTML = '<span class="n"></span>'; el.style.display = 'none'; $('labels').appendChild(el); return el; })();
+  function setTag(el, m) { el.querySelector('.n').innerHTML = ''; if (m.leader) { const c = document.createElement('span'); c.className = 'crown'; c.textContent = '★'; el.querySelector('.n').appendChild(c); } el.querySelector('.n').append(m.name); }
+  function rebuildPartyShow() {
+    for (const p of partyShow) { scene.remove(p.root); p.ch.dispose(); p.label.remove(); }
+    partyShow.length = 0;
+    if (!party || !party.code) return;
+    const others = party.members.filter((m, i) => i !== party.you);
+    others.forEach((m, i) => {
+      const spot = PARTY_SPOTS[i]; if (!spot) return;
+      const root = new THREE.Group();
+      const base = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 0.85, 0.3, 10), lam(0x4a4d55)); base.position.y = 0.15;
+      const rim = new THREE.Mesh(new THREE.TorusGeometry(0.77, 0.035, 4, 18), basic(0x3fe0ff)); rim.rotation.x = Math.PI / 2; rim.position.y = 0.3;
+      const ch = Chars.buildCharacter(m.look, 0x3fe0ff, { noRing: true }); ch.root.position.y = 0.3; ch.root.rotation.y = -spot[0] * 0.12;
+      root.add(base, rim, ch.root);
+      root.position.set(SHOW.x + spot[0], 0, SHOW.z + spot[1]); scene.add(root);
+      const label = document.createElement('div'); label.className = 'nl menu-tag'; label.innerHTML = '<span class="n"></span>'; label.style.color = '#3fe0ff';
+      setTag(label, m); $('labels').appendChild(label);
+      partyShow.push({ root, ch, label });
+    });
+  }
+  const tagV = new THREE.Vector3();
+  function placeTag(el, x, y, z, vis) {
+    if (!vis) { el.style.display = 'none'; return; }
+    tagV.set(x, y, z).project(camera);
+    if (tagV.z > 1) { el.style.display = 'none'; return; }
+    el.style.display = '';
+    el.style.left = `${(tagV.x * 0.5 + 0.5) * innerWidth}px`;
+    el.style.top = `${(-tagV.y * 0.5 + 0.5) * innerHeight}px`;
+  }
+  function updatePartyShow(dt, inMenus) {
+    const showAll = inMenus && ui !== 'locker';
+    for (const p of partyShow) {
+      p.root.visible = showAll;
+      if (showAll) Chars.animateCharacter(p.ch, dt, 0, true);
+      placeTag(p.label, p.root.position.x, 2.2, p.root.position.z, showAll);
+    }
+    const me0 = party && party.code ? party.members[party.you] : null;
+    if (inMenus && (ui === 'title' || ui === 'party' || ui === 'mode')) {
+      setTag(myTag, me0 || { name: profile.name || 'PLAYER', leader: false });
+      myTag.style.color = '#ffd23f';
+      placeTag(myTag, SHOW.x, 2.25, SHOW.z, true);
+    } else placeTag(myTag, 0, 0, 0, false);
+  }
   function refreshSettings() {
     const label = { quality: settings.quality.toUpperCase(), sound: settings.sound ? 'ON' : 'OFF', fps: settings.fps ? 'ON' : 'OFF' };
     for (const row of document.querySelectorAll('#screen-settings [data-set]')) row.querySelector('.val').textContent = `◀ ${label[row.dataset.set]} ▶`;
@@ -506,6 +602,7 @@
   addEventListener('keydown', e => {
     ac();
     if (document.activeElement && document.activeElement.tagName === 'INPUT') {
+      if ((e.code === 'Enter' || e.code === 'NumpadEnter') && document.activeElement.id === 'party-input') { e.preventDefault(); partyJoin(); return; }
       if (['ArrowUp', 'ArrowDown', 'Enter', 'NumpadEnter', 'Escape', 'Tab'].includes(e.code)) {
         e.preventDefault();
         menuAction(e.code === 'ArrowUp' ? 'up' : 'down');
@@ -593,6 +690,7 @@
       ws.onopen = () => { connected = true; tries = 0; if (!(match && !inOnlineMatch && ui !== 'title')) netMode = 'online'; netBadge(); };
       ws.onclose = () => {
         const wasOnline = netMode === 'online';
+        if (party) { party = null; refreshParty(); }
         if (wasOnline) netMode = LOCAL ? 'offline' : 'connecting';
         if (!LOCAL) connected = false;
         if (wasOnline && inOnlineMatch && (ui === 'practice' || ui === 'game' || ui === 'pause' || ui === 'end')) { stopPractice(); clearMatch(); show('title'); toast('Lost connection to the server'); }
@@ -608,14 +706,18 @@
   let queueInfo = null, queueStart = 0;
   function queueFor(mode) {
     if (!connected) { toast('Connecting to the server…'); return; }
+    if (party && party.code && !party.leader) { sfx.denied(); toast('Waiting for the party leader to start a match'); show('party'); return; }
+    send({ t: 'queue', mode, name: profile.name || 'PLAYER', look: profile.look });
+    enterQueue(mode);
+  }
+  function enterQueue(mode) {
     clearMatch();
     lastMode = mode; queueInfo = null; queueStart = performance.now();
     inOnlineMatch = netMode === 'online';
-    send({ t: 'queue', mode, name: profile.name || 'PLAYER', look: profile.look, party: profile.party || '' });
     $('pb-mode').textContent = { '1v1': '1V1 DUEL', '2v2': '2V2 SQUADS', extraction: '4V4 EXTRACTION' }[mode];
     startPractice();
   }
-  function cancelQueue() { send({ t: 'cancel' }); stopPractice(); clearMatch(); sfx.back(); show('mode'); }
+  function cancelQueue() { send({ t: 'cancel' }); stopPractice(); clearMatch(); sfx.back(); show(party && party.code ? 'party' : 'mode'); }
   // ---------- Match state ----------
   let match = null, prevState = null, curState = null, curAt = 0, interval = 33, matchOver = false;
   const actors = new Map();
@@ -680,6 +782,18 @@
   }
 
   function onMessage(msg) {
+    if (msg.t === 'party') {
+      const was = party && party.code ? party.members.length : 0;
+      party = msg.code ? msg : null;
+      if (party && party.members.length > was && was) sfx.ready();
+      refreshParty(); return;
+    }
+    if (msg.t === 'party_err') { sfx.denied(); toast(msg.text); return; }
+    if (msg.t === 'party_queue') {   // the leader started: join the queue (practice range while waiting)
+      if (ui === 'game' || ui === 'pause') return;
+      sfx.select(); toast('Your party leader started a match'); enterQueue(msg.mode); return;
+    }
+    if (msg.t === 'party_cancel') { if (ui === 'practice') { stopPractice(); clearMatch(); show('party'); toast('The party left the queue'); } return; }
     if (msg.t === 'queued') queueInfo = msg;
     else if (msg.t === 'match') { setupMatch(msg); if (!msg.practice) sfx.select(); }
     else if (msg.t === 'notice' && match) {
@@ -1373,8 +1487,10 @@
       wantLook.set(SHOW.x + side, close ? 1.25 : 1.1, SHOW.z);
       wantPos.set(SHOW.x + side, close ? 1.7 : 2.1, SHOW.z + (close ? 3.6 : 6.2) * (narrow ? 1.5 : 1));
       setFov(50);
+      if (partyShow.length && !close) { const k = partyShow.length; wantPos.z += 1.2 + 0.5 * k; wantLook.x += 0.6; wantPos.x += 0.6; }
       if (showChar) { showChar.root.rotation.y += dt * (close ? 0.5 : 0.35); Chars.animateCharacter(showChar, dt, 0, true); }
     }
+    updatePartyShow(dt, !inMatchView && ui !== 'end' && ui !== 'loading');
     updateParticles(dt);
     updateTracers(dt);
     updateBlasts(dt);

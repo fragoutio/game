@@ -295,3 +295,14 @@ table.board td.k { text-align: right; }
   #announce .pop, .feed div { animation: none; }
   .mi { transition: none; }
 }
+
+/* party */
+#party-code { margin: 14px 0 6px; font-family: var(--font-display); }
+#party-code small { display: block; font-size: 13px; letter-spacing: 3px; color: var(--muted); }
+#party-code b { font-size: 54px; letter-spacing: 10px; color: var(--yellow); text-shadow: 3px 3px 0 rgba(0,0,0,0.5); }
+#party-list { display: flex; flex-direction: column; gap: 4px; margin: 6px 0 4px; font-family: var(--font-display); font-size: 18px; letter-spacing: 1px; }
+#party-list .pm { display: flex; align-items: center; gap: 8px; }
+#party-list .pm .crown { color: var(--yellow); font-size: 14px; }
+#party-list .pm .you { color: var(--muted); font-size: 13px; }
+.nl.menu-tag { font-size: 18px; text-shadow: 2px 2px 0 rgba(0,0,0,0.7); white-space: nowrap; }
+.nl.menu-tag .crown { color: var(--yellow); margin-right: 4px; }

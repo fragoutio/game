@@ -260,14 +260,57 @@ function dequeue(client) {
   client.queued = null;
 }
 
+// picks players for one match from the queue, keeping each party together (a party bigger than the match is split)
+function takeGroup(q, size) {
+  const out = [];
+  for (const c of q) {
+    if (out.length >= size) break;
+    if (out.includes(c)) continue;
+    const grp = c.pt ? q.filter(o => o.pt === c.pt) : [c];
+    if (out.length + grp.length <= size) out.push(...grp);
+    else if (grp.length > size) out.push(...grp.slice(0, size - out.length));
+  }
+  return out;
+}
 function matchmake() {
   const now = Date.now();
   for (const mode in queues) {
-    const q = queues[mode], size = MODES[mode];
-    while (q.length >= size) startMatch(mode, q.splice(0, size));
-    if (q.length && now - q[0].queuedAt >= BOT_FILL_MS) startMatch(mode, q.splice(0, size));
+    const size = MODES[mode];
+    let q = queues[mode];
+    while (q.length) {
+      const pick = takeGroup(q, size);
+      if (pick.length < size && now - q[0].queuedAt < BOT_FILL_MS) break;
+      q = queues[mode] = q.filter(c => !pick.includes(c));
+      startMatch(mode, pick);
+    }
     for (const c of q) send(c, { t: 'queued', mode, waited: now - c.queuedAt, inQueue: q.length });
   }
+}
+
+// ---------- Parties ----------
+// A party is up to 4 friends with a short code. They wait together in the menu, and when the leader picks a
+// mode everyone is queued together and put on the same team (as far as the mode allows).
+const parties = new Map();
+const PARTY_MAX = 4;
+function newPartyCode() {
+  const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let c;
+  do { c = ''; for (let i = 0; i < 5; i++) c += A[(Math.random() * A.length) | 0]; } while (parties.has(c));
+  return c;
+}
+function partySync(pt) {
+  const members = pt.members.map(c => ({ name: c.name, look: c.look, leader: c === pt.leader }));
+  pt.members.forEach((c, i) => send(c, { t: 'party', code: pt.code, members, you: i, leader: c === pt.leader }));
+}
+function partyLeave(client) {
+  const pt = client.pt;
+  if (!pt) return;
+  pt.members = pt.members.filter(c => c !== client);
+  client.pt = null;
+  send(client, { t: 'party', code: null, members: [] });
+  if (!pt.members.length) { parties.delete(pt.code); return; }
+  if (pt.leader === client) pt.leader = pt.members[0];
+  partySync(pt);
 }
 
 
@@ -1012,22 +1055,49 @@ function stepMatch(m) {
 // connect(sendFn) registers a client. sendFn receives plain message objects.
 // The returned handle takes the client's messages via receive(msg) and close().
 function connect(sendFn) {
-  const client = { send: sendFn, name: 'Player', queued: null, match: null, player: null };
+  const client = { send: sendFn, name: 'Player', queued: null, match: null, player: null, pt: null, look: cleanLook(null) };
+  const setProfile = msg => {
+    if (msg.name != null) client.name = String(msg.name || 'Player').replace(/[^\w \-]/g, '').slice(0, 12) || 'Player';
+    if (msg.look) client.look = cleanLook(msg.look);
+  };
   return {
     receive(msg) {
       if (!msg || typeof msg !== 'object') return;
+      if (msg.name != null || msg.look) setProfile(msg);
       if (msg.t === 'queue' && MODES[msg.mode] && !client.match) {
-        dequeue(client);
-        client.name = String(msg.name || 'Player').replace(/[^\w \-]/g, '').slice(0, 12) || 'Player';
-        client.queued = msg.mode; client.queuedAt = Date.now(); client.look = msg.look;
-        client.party = String(msg.party || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12);   // same code = same team
-        queues[msg.mode].push(client);
+        const pt = client.pt;
+        if (pt && pt.leader !== client) { send(client, { t: 'party_err', text: 'Only the party leader can start a match' }); return; }
+        const group = pt ? pt.members.filter(c => !c.match) : [client];
+        const at = Date.now();
+        for (const c of group) {
+          dequeue(c);
+          c.queued = msg.mode; c.queuedAt = at;
+          c.party = pt ? pt.code : String(msg.party || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12);   // same code = same team
+          queues[msg.mode].push(c);
+          if (c !== client) send(c, { t: 'party_queue', mode: msg.mode });
+        }
         matchmake();
-      } else if (msg.t === 'cancel') dequeue(client);
+      } else if (msg.t === 'cancel') {
+        if (client.pt) for (const c of client.pt.members) { if (c.queued) { dequeue(c); if (c !== client) send(c, { t: 'party_cancel' }); } }
+        else dequeue(client);
+      }
       else if (msg.t === 'input' || msg.t === 'throw') handlePlay(client, msg);
       else if (msg.t === 'leave') playerLeft(client);
+      else if (msg.t === 'party_create') {
+        partyLeave(client);
+        const pt = { code: newPartyCode(), leader: client, members: [client] };
+        parties.set(pt.code, pt); client.pt = pt; partySync(pt);
+      } else if (msg.t === 'party_join') {
+        const code = String(msg.code || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
+        const pt = parties.get(code);
+        if (!pt) send(client, { t: 'party_err', text: 'No party with code ' + (code || '?') });
+        else if (pt === client.pt) partySync(pt);
+        else if (pt.members.length >= PARTY_MAX) send(client, { t: 'party_err', text: 'That party is full (4 players)' });
+        else { partyLeave(client); pt.members.push(client); client.pt = pt; partySync(pt); }
+      } else if (msg.t === 'party_leave') { if (client.queued) dequeue(client); partyLeave(client); }
+      else if (msg.t === 'hello' && client.pt) partySync(client.pt);
     },
-    close() { dequeue(client); playerLeft(client); },
+    close() { dequeue(client); playerLeft(client); partyLeave(client); },
   };
 }
 
