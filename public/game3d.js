@@ -345,6 +345,7 @@
     $('hud').hidden = !inMatch;
     $('hud').classList.toggle('practice', name === 'practice');
     $('keys-bar').hidden = name === 'game' || name === 'practice';
+    $('build-tag').hidden = !(name === 'title' || name === 'pause' || name === 'settings');
     pedestal.visible = !inMatch && name !== 'end';
     if (name === 'locker') refreshLocker();
     if (name === 'settings') refreshSettings();
@@ -1241,6 +1242,8 @@
     }
     requestAnimationFrame(frame);
   }
+  // which version is this? (shown small on the title and pause screens)
+  $('build-tag').textContent = 'build ' + (window.FRAGOUT_BUILD || 'dev');
   refreshSettings();
   requestAnimationFrame(frame);
 })();

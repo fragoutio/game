@@ -245,6 +245,8 @@ table.board td.k { text-align: right; }
 
 #toast { position: fixed; left: 50%; top: 18%; transform: translateX(-50%); z-index: 30; background: var(--panel); border: 2px solid var(--yellow);
   color: var(--yellow); padding: 6px 16px; font-size: 14px; pointer-events: none; }
+#build-tag { position: fixed; right: max(12px, env(safe-area-inset-right, 0px)); top: max(10px, env(safe-area-inset-top, 0px)); z-index: 25;
+  font-size: 11px; letter-spacing: 1px; color: var(--muted); opacity: 0.8; pointer-events: none; font-variant-numeric: tabular-nums; }
 #fps { position: fixed; right: 8px; bottom: 6px; z-index: 30; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
 
 #focus-hint { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; background: rgba(6,8,24,0.55); cursor: pointer; }
