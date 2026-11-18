@@ -123,6 +123,18 @@ thermite fire wall drawn where it will land. Aim with the arrow keys, **release*
 No friendly fire and no self-damage. Bots use grenades too, usually as an opener. Grenade tuning is the `GREN`
 table in `public/core.js`. The kill feed marks the cause: ▸ gun, ◎ headshot, ↺ boomerang, ✹ frag, ♨ fire.
 
+## 4v4 Extraction
+
+Pick **4V4 EXTRACTION** in Play. One team attacks, the other defends; sides swap every round, first to 3 rounds.
+Attackers start in their home base and have **3 minutes** to stand at the gem in the centre room for **3 seconds**
+(extraction pauses while a defender is also next to it), then carry it back into their own base. If the carrier
+is knocked out the gem drops: an attacker can grab it, a defender touching it sends it back to the middle.
+Defenders win when time runs out or all attackers are down; attackers win by delivering the gem or wiping the
+defenders. Bots fill empty slots after 30 s and play the objective. Tuning: `EXTRACT` in `public/core.js`.
+
+**Green wood panels** cover some doorways. They block movement and sight until broken: your gun fires at a panel
+under the crosshair within 220 px, and grenade blasts splinter them. Panels are rebuilt each round.
+
 ## Map
 
 1280 × 960 px (4× the area of the first map), grey concrete. Each team spawns in a walled room with two

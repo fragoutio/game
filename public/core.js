@@ -13,26 +13,40 @@ let log = () => {};
 const MAP = {
   w: 1280, h: 960,
   // [x, y, w, h, type] — type 1 = full-height room wall, 2 = vent (a low grated gap at the bottom of a wall:
-  // grenades low enough roll/bounce under it; players, bullets and sight can't pass), otherwise a crate.
-  // Layout: walled spawn rooms on the left (blue) and right (red), each with two offset doorways and short
-  // walls in front of them (no spawn room can see into the other); a middle of small rooms and corridors.
-  // Generated and checked (paths, zero spawn-room sightlines) by a layout script.
+  // grenades low enough roll/bounce under it; players, bullets and sight can't pass), 3 = green wood panel
+  // (blocks movement, sight and shots until it's shot or blown apart), otherwise a crate.
+  // Layout: blue home base (west) and red home base (east), each with two offset doorways and short walls in
+  // front of them; a centre gem room with an entrance on every side (north and south ones covered by green
+  // panels); rooms to the north and south; small side rooms off the corridors. Generated and checked (every
+  // spot reachable with panels intact, zero sightlines between the bases, no base can see the gem) by a script.
   walls: [
-    [0, 0, 1280, 32], [0, 928, 1280, 32], [0, 0, 32, 960], [1248, 0, 32, 960], [288, 32, 32, 160, 1],
-    [288, 300, 32, 360, 1], [288, 768, 32, 160, 1], [960, 32, 32, 268, 1], [960, 408, 32, 144, 1],
-    [960, 660, 32, 268, 1], [400, 168, 32, 64, 1], [400, 232, 32, 32, 2], [400, 264, 32, 64, 1],
-    [400, 632, 32, 160, 1], [848, 276, 32, 160, 1], [848, 524, 32, 64, 1], [848, 588, 32, 32, 2],
-    [848, 620, 32, 64, 1], [544, 32, 32, 88, 1], [544, 120, 32, 32, 2], [544, 152, 32, 72, 1],
-    [704, 736, 32, 72, 1], [704, 808, 32, 32, 2], [704, 840, 32, 88, 1], [512, 464, 112, 32, 1],
-    [624, 464, 32, 32, 2], [656, 464, 112, 32, 1], [592, 192, 72, 32, 1], [664, 192, 32, 32, 2],
-    [696, 192, 72, 32, 1], [736, 96, 32, 96, 1], [512, 736, 72, 32, 1], [584, 736, 32, 32, 2],
-    [616, 736, 72, 32, 1], [512, 768, 32, 96, 1], [432, 352, 96, 32, 1], [752, 576, 96, 32, 1],
-    [608, 300, 64, 48], [608, 612, 64, 48], [468, 400, 44, 44], [768, 516, 44, 44], [124, 444, 68, 72],
-    [1088, 444, 68, 72], [640, 112, 48, 48], [592, 820, 48, 48], [352, 470, 40, 40], [888, 450, 40, 40],
-    [1164, 260, 56, 40], [60, 660, 56, 40], [1164, 660, 56, 40], [60, 260, 56, 40],
+    [0, 0, 1280, 32], [0, 928, 1280, 32], [0, 0, 32, 960], [1248, 0, 32, 960], [256, 32, 32, 144, 1],
+    [256, 276, 32, 408, 1], [256, 784, 32, 144, 1], [992, 32, 32, 268, 1], [992, 400, 32, 160, 1],
+    [992, 660, 32, 268, 1], [336, 150, 32, 60, 1], [336, 210, 32, 32, 2], [336, 242, 32, 58, 1],
+    [336, 660, 32, 150, 1], [912, 270, 32, 150, 1], [912, 540, 32, 60, 1], [912, 600, 32, 32, 2],
+    [912, 632, 32, 58, 1], [496, 352, 40, 32, 1], [536, 352, 32, 32, 2], [568, 352, 40, 32, 1],
+    [608, 360, 64, 16, 3], [672, 352, 112, 32, 1], [496, 576, 112, 32, 1], [608, 584, 64, 16, 3],
+    [672, 576, 32, 32, 2], [704, 576, 80, 32, 1], [496, 384, 32, 64, 1], [496, 512, 32, 16, 1],
+    [496, 528, 32, 32, 2], [496, 560, 32, 16, 1], [752, 384, 32, 64, 1], [752, 512, 32, 64, 1],
+    [432, 208, 48, 32, 1], [540, 208, 60, 32, 1], [600, 208, 32, 32, 2], [632, 208, 108, 32, 1],
+    [740, 216, 60, 16, 3], [800, 208, 48, 32, 1], [432, 32, 32, 64, 1], [432, 156, 32, 52, 1],
+    [816, 32, 32, 88, 1], [816, 180, 32, 28, 1], [432, 720, 48, 32, 1], [480, 728, 60, 16, 3],
+    [540, 720, 40, 32, 1], [580, 720, 32, 32, 2], [612, 720, 128, 32, 1], [800, 720, 48, 32, 1],
+    [432, 752, 32, 48, 1], [432, 860, 32, 68, 1], [816, 752, 32, 28, 1], [816, 840, 32, 88, 1],
+    [288, 320, 12, 32, 1], [352, 320, 80, 32, 1], [400, 320, 32, 100, 1], [288, 608, 12, 32, 1],
+    [352, 608, 80, 32, 1], [400, 516, 32, 124, 1], [848, 320, 52, 32, 1], [952, 320, 40, 32, 1],
+    [848, 320, 32, 100, 1], [848, 608, 52, 32, 1], [900, 616, 52, 16, 3], [952, 608, 40, 32, 1],
+    [848, 516, 32, 124, 1], [560, 96, 48, 48, 0], [690, 820, 48, 48, 0], [96, 440, 64, 80, 0],
+    [1120, 440, 64, 80, 0], [600, 260, 56, 36, 0], [624, 656, 56, 36, 0], [176, 96, 48, 40, 0],
+    [1056, 820, 48, 40, 0], [300, 470, 40, 40, 0], [940, 470, 40, 40, 0],
   ],
-  // [x, y, yaw]: spawns in the corners of each spawn room, facing its nearest doorway
-  spawns: {"A":[[120, 112, 0.64], [120, 848, -0.64]], "B":[[1160, 848, -2.26], [1160, 112, 2.26]]},
+  // [x, y, yaw] spawns in each home base, facing a doorway (team modes, and the attackers in Extraction)
+  spawns: { A: [[80, 120, 0.9], [80, 840, -0.9], [180, 300, 0.4], [180, 660, -0.4]],
+    B: [[1200, 840, -2.3], [1200, 120, 2.3], [1100, 300, 2.8], [1100, 660, -2.8]] },
+  // Extraction: the gem sits here; defenders spawn around it; attackers deliver it to their own base
+  gem: [640,480],
+  defend: [[560, 420, 0], [720, 420, 3.14], [560, 540, 0], [720, 540, 3.14]],
+  bases: { A: [32,32,224,896], B: [1024,32,224,896] },
 };
 
 const P = {
@@ -58,7 +72,14 @@ const P = {
   // Leaning (only while aiming) moves your eye and gun leanPx to the side, so you can shoot around a corner
   // while staying mostly behind it.
   adsSpeed: 1, leanPx: 11,
+  // Green wood panels: hp each; guns fire at a panel under the crosshair within panelRange px; grenades
+  // blasts damage them too (x panelBlast)
+  panelHp: 160, panelRange: 220, panelBlast: 1.5,
 };
+// Extraction (4v4): attackers extract the gem (stand within extractR px for extractTicks), carry it back
+// to their base. Round timer roundTicks (3 min). A dropped gem is picked up by an attacker (pickR) or sent
+// home by a defender touching it.
+const EXTRACT = { extractR: 44, extractTicks: 180, pickR: 22, roundTicks: 180 * 60 };
 // Body size per stance: eye height and how tall the hittable body is (head = top headH px)
 // The eye sits at chin level, just under the head, so looking straight ahead lines up a body shot:
 // you have to aim up a little (more the closer they are) to land a headshot.
@@ -105,9 +126,14 @@ const rectHitsCircle = ([x, y, w, h], cx, cy, r) => {
   const nx = Math.max(x, Math.min(cx, x + w)), ny = Math.max(y, Math.min(cy, y + h));
   return (cx - nx) ** 2 + (cy - ny) ** 2 < r * r;
 };
-const blocked = (x, y, r) => MAP.walls.some(w => rectHitsCircle(w, x, y, r));
+// Panels that have been broken in the match being simulated (or shown) right now. stepMatch sets it for the
+// match it's stepping; the client sets it to what it was last told (setBroken).
+let curBroken = null;
+const wallOn = i => !curBroken || !curBroken.has(i);
+function setBroken(set) { curBroken = set; }
+const blocked = (x, y, r) => { for (let i = 0; i < MAP.walls.length; i++) if (wallOn(i) && rectHitsCircle(MAP.walls[i], x, y, r)) return true; return false; };
 // for grenades: vents (type 2) only block what's above vent height
-const gBlocked = (x, y, r, z) => MAP.walls.some(w => !(w[4] === 2 && z < P.ventH) && rectHitsCircle(w, x, y, r));
+const gBlocked = (x, y, r, z) => { for (let i = 0; i < MAP.walls.length; i++) { const w = MAP.walls[i]; if (wallOn(i) && !(w[4] === 2 && z < P.ventH) && rectHitsCircle(w, x, y, r)) return true; } return false; };
 
 function lineOfSight(ax, ay, bx, by) {
   const d = Math.hypot(bx - ax, by - ay), steps = Math.ceil(d / 6);
@@ -149,8 +175,8 @@ function findPath(fx, fy, tx, ty) {
 }
 
 // ---------- Matchmaking ----------
-const MODES = { '1v1': 2, '2v2': 4 };
-const queues = { '1v1': [], '2v2': [] };
+const MODES = { '1v1': 2, '2v2': 4, extraction: 8 };   // extraction = 4v4
+const queues = { '1v1': [], '2v2': [], extraction: [] };
 // Bots play under ordinary-looking gamer tags. Whether a player is a bot never leaves the server.
 const BOT_NAMES = ['VEXX', 'NOVA_7', 'ROOKIE99', 'KITE', 'JOLTZ', 'PIKE', 'ECH0', 'FLINTY', 'MAKO', 'ZEDD', 'TURBO_T', 'SKYE',
   'BLITZ', 'COBRA_K', 'DUSTY', 'GHOSTY', 'LYNX', 'MOJO', 'PIXEL', 'RAZZ', 'SNIPZ', 'TANK_42', 'VIPER', 'WISP'];
@@ -207,7 +233,7 @@ function startMatch(mode, clients) {
     const c = clients[i];
     players.push(makePlayer(team, c ? c.name : botName(), c || null, c ? c.look : null));
   }
-  const match = { mode, players, events: [], projectiles: [], fires: [], nextProj: 1, score: { A: 0, B: 0 }, round: 0, phase: 'countdown', phaseT: 120, tick: 0, over: false };
+  const match = { mode, players, events: [], projectiles: [], fires: [], nextProj: 1, broken: new Set(), panelHp: new Map(), score: { A: 0, B: 0 }, round: 0, phase: 'countdown', phaseT: 120, tick: 0, over: false };
   matches.add(match);
   for (const p of players) if (p.client) { p.client.queued = null; p.client.match = match; p.client.player = p; }
   resetRound(match);
@@ -218,13 +244,22 @@ function startMatch(mode, clients) {
 
 function resetRound(m) {
   m.round++; m.projectiles = []; m.fires = []; m.phase = 'countdown'; m.phaseT = 180; // 3 s: "3, 2, 1, FIGHT"
+  m.broken = new Set(); m.panelHp = new Map(); m.roundReason = null;   // panels are rebuilt every round
+  if (m.mode === 'extraction') {
+    // like Siege: teams swap attack and defence every round
+    m.attack = m.round % 2 === 1 ? 'A' : 'B';
+    m.gem = { state: 'home', x: MAP.gem[0], y: MAP.gem[1], carrier: 0, prog: 0 };
+    m.timeLeft = EXTRACT.roundTicks;
+  }
   const idx = { A: 0, B: 0 };
   for (const p of m.players) {
-    const [x, y, yaw] = MAP.spawns[p.team][idx[p.team]++];   // facing the spawn room's doorway
+    const defending = m.mode === 'extraction' && p.team !== m.attack;
+    const spots = defending ? MAP.defend : MAP.spawns[p.team];
+    const [x, y, yaw] = spots[idx[p.team]++ % spots.length];   // attackers: home base facing a doorway; defenders: around the gem
     Object.assign(p, { x, y, hp: P.hp, alive: true, cool: 0, yaw, pitch: 0, burst: 0, sinceShot: 99,
       stance: 'stand', running: false, slideT: 0, slideCd: 0, cd: { boom: 0, frag: 0, therm: 0 }, throws: [], switchT: 0, cool: 0 });
     p.input = { f: 0, s: 0, yaw, pitch: 0, run: false, crouch: false };
-    p.brain.path = []; p.brain.repath = 0;
+    p.brain.path = []; p.brain.repath = 0; p.brain.guard = null;
   }
 }
 
@@ -298,7 +333,9 @@ function recoilKick(n) {
 // Exact test: does the straight segment (x1,y1)->(x2,y2) pass through any wall? (slab method per rectangle)
 function segmentClear(x1, y1, x2, y2) {
   const dx = x2 - x1, dy = y2 - y1;
-  for (const [wx, wy, w, h] of MAP.walls) {
+  for (let i = 0; i < MAP.walls.length; i++) {
+    if (!wallOn(i)) continue;
+    const [wx, wy, w, h] = MAP.walls[i];
     let t0 = 0, t1 = 1;
     for (const [p, q] of [[-dx, x1 - wx], [dx, wx + w - x1], [-dy, y1 - wy], [dy, wy + h - y1]]) {
       if (p === 0) { if (q < 0) { t0 = 2; break; } }
@@ -307,6 +344,29 @@ function segmentClear(x1, y1, x2, y2) {
     if (t0 <= t1) return false;
   }
   return true;
+}
+
+// First wall the ray (x,y)->(dir) hits within maxD: { i, t } or null (slab method)
+function rayWall(x, y, dx, dy, maxD) {
+  let best = null;
+  for (let i = 0; i < MAP.walls.length; i++) {
+    if (!wallOn(i)) continue;
+    const [wx, wy, w, h] = MAP.walls[i];
+    let t0 = 0, t1 = maxD, miss = false;
+    for (const [p, q] of [[-dx, x - wx], [dx, wx + w - x], [-dy, y - wy], [dy, wy + h - y]]) {
+      if (p === 0) { if (q < 0) { miss = true; break; } }
+      else { const r = q / p; if (p < 0) { if (r > t1) { miss = true; break; } if (r > t0) t0 = r; } else { if (r < t0) { miss = true; break; } if (r < t1) t1 = r; } }
+    }
+    if (!miss && t0 <= t1 && (!best || t0 < best.t)) best = { i, t: t0 };
+  }
+  return best;
+}
+// A green panel under the crosshair within range (and at a height the panel covers): { i, t, h } or null
+function panelUnder(x, y, eye, yaw, pitch, maxD = P.panelRange) {
+  const hit = rayWall(x, y, Math.cos(yaw), Math.sin(yaw), maxD);
+  if (!hit || MAP.walls[hit.i][4] !== 3) return null;
+  const h = eye + hit.t * Math.tan(pitch);
+  return h > 0 && h < 76 ? { i: hit.i, t: hit.t, h } : null;
 }
 
 // What's under the crosshair: the view ray from the shooter's eye along yaw/pitch passes through a body
@@ -355,10 +415,50 @@ function botAim(b, yaw, pitch) {
   b.pitch = clamp(b.pitch + clamp(pitch - b.pitch, -turn * 0.7, turn * 0.7), -P.pitchMax, P.pitchMax);
 }
 
+// Extraction: where should this bot be going? { x, y, mode } — mode 'go' (walk there, even mid-fight),
+// 'hold' (stand there; e.g. extracting the gem), or null to just hunt the nearest enemy.
+function botGoal(m, b) {
+  if (m.mode !== 'extraction' || !m.gem) return null;
+  const g = m.gem, attacking = b.team === m.attack;
+  const base = MAP.bases[b.team], home = [base[0] + base[2] / 2, base[1] + base[3] / 2];
+  if (attacking) {
+    if (g.state === 'carried' && g.carrier === b.id) return { x: home[0], y: home[1], mode: 'go' };
+    if (g.state === 'carried') { const c = m.players.find(o => o.id === g.carrier); return c ? { x: c.x, y: c.y, mode: 'escort' } : null; }
+    if (Math.hypot(g.x - b.x, g.y - b.y) < EXTRACT.extractR - 10) return { x: g.x, y: g.y, mode: 'hold' };
+    return { x: g.x, y: g.y, mode: 'go' };
+  }
+  if (g.state === 'carried') { const c = m.players.find(o => o.id === g.carrier); return c ? { x: c.x, y: c.y, mode: 'go' } : null; }
+  if (g.state === 'dropped') return { x: g.x, y: g.y, mode: 'go' };
+  if (!b.brain.guard) {   // pick a spot to hold around the gem room
+    for (let k = 0; k < 30; k++) {
+      const a = Math.random() * Math.PI * 2, d = 40 + Math.random() * 120, x = g.x + Math.cos(a) * d, y = g.y + Math.sin(a) * d;
+      if (!blocked(x, y, P.r + 4)) { b.brain.guard = [x, y]; break; }
+    }
+  }
+  return b.brain.guard ? { x: b.brain.guard[0], y: b.brain.guard[1], mode: Math.hypot(b.brain.guard[0] - b.x, b.brain.guard[1] - b.y) < 20 ? 'hold' : 'go' } : null;
+}
+function followPath(b, inp, tx, ty) {
+  const br = b.brain;
+  if (--br.repath <= 0 || !br.path.length || br.pathTo !== Math.round(tx / 16) + ',' + Math.round(ty / 16)) {
+    br.path = findPath(b.x, b.y, tx, ty); br.repath = 20; br.pathTo = Math.round(tx / 16) + ',' + Math.round(ty / 16);
+  }
+  while (br.path.length && Math.hypot(br.path[0][0] - b.x, br.path[0][1] - b.y) < 6) br.path.shift();
+  if (br.path.length) {
+    inp.mx = br.path[0][0] - b.x; inp.my = br.path[0][1] - b.y;
+    const ahead = br.path[Math.min(br.path.length - 1, 4)];
+    return Math.atan2(ahead[1] - b.y, ahead[0] - b.x);
+  }
+  return null;
+}
+
 function botThink(m, b) {
   const br = b.brain, inp = { mx: 0, my: 0, yaw: b.yaw, pitch: 0 };
+  const goal = botGoal(m, b);
   const foes = m.players.filter(o => o.alive && o.team !== b.team);
-  if (!foes.length) return inp;
+  if (!foes.length) {
+    if (goal && goal.mode !== 'hold') { const y = followPath(b, inp, goal.x, goal.y); if (y != null) inp.yaw = y; inp.run = true; }
+    return inp;
+  }
   const t = foes.reduce((a, o) => (Math.hypot(o.x - b.x, o.y - b.y) < Math.hypot(a.x - b.x, a.y - b.y) ? o : a));
   const dx = t.x - b.x, dy = t.y - b.y, dist = Math.hypot(dx, dy) || 1;
 
@@ -374,6 +474,9 @@ function botThink(m, b) {
     let mx = -dy / dist * br.strafe, my = dx / dist * br.strafe;
     if (dist < 120) { mx -= dx / dist; my -= dy / dist; } else if (dist > 300) { mx += dx / dist; my += dy / dist; }
     inp.mx = mx; inp.my = my;
+    // objective first: a carrier keeps heading home and an extractor stays on the gem while shooting
+    if (goal && goal.mode === 'go' && m.gem && m.gem.carrier === b.id) { inp.mx = 0; inp.my = 0; followPath(b, inp, goal.x, goal.y); }
+    if (goal && goal.mode === 'hold') { inp.mx = 0; inp.my = 0; }
     if (b.weapon !== 'shotgun' && dist < 100) inp.weapon = 'shotgun';
     else if (b.weapon === 'shotgun' && dist > 170) inp.weapon = 'rifle';
     // grenades: often an opener while they line up their first shot, sometimes mid-fight
@@ -387,14 +490,11 @@ function botThink(m, b) {
     }
   } else {
     br.seen = 0;
-    if (--br.repath <= 0 || !br.path.length) { br.path = findPath(b.x, b.y, t.x, t.y); br.repath = 20; }
-    while (br.path.length && Math.hypot(br.path[0][0] - b.x, br.path[0][1] - b.y) < 6) br.path.shift();
-    if (br.path.length) {
-      inp.mx = br.path[0][0] - b.x; inp.my = br.path[0][1] - b.y; inp.run = true;
-      // look a little ahead along the route, ready for the next corner
-      const ahead = br.path[Math.min(br.path.length - 1, 4)];
-      inp.yaw = Math.atan2(ahead[1] - b.y, ahead[0] - b.x);
-    }
+    if (goal && goal.mode === 'hold') return inp;   // hold the spot (extracting, guarding)
+    // head for the objective if there is one, otherwise hunt the nearest enemy; look ahead along the route
+    const [gx, gy] = goal ? (goal.mode === 'escort' ? [goal.x + 30, goal.y + 30] : [goal.x, goal.y]) : [t.x, t.y];
+    const y = followPath(b, inp, gx, gy);
+    if (y != null) { inp.yaw = y; inp.run = true; }
   }
   return inp;
 }
@@ -461,8 +561,19 @@ function damage(m, o, amount, owner, src, head, x, y, z) {
   }
 }
 
+function damagePanel(m, i, amount) {
+  if (!m.panelHp || m.broken.has(i)) return;
+  const hp = (m.panelHp.has(i) ? m.panelHp.get(i) : P.panelHp) - amount;
+  m.panelHp.set(i, hp);
+  if (hp <= 0) { m.broken.add(i); m.events.push(['pb', i]); }   // smashed through
+}
 function explode(m, pr, radius, dmg, src) {
   m.events.push(['x', Math.round(pr.x), Math.round(pr.y), Math.round(pr.z), src, radius]);
+  if (m.panelHp) MAP.walls.forEach((w, i) => {   // blasts splinter nearby green panels
+    if (w[4] !== 3 || m.broken.has(i)) return;
+    const nx = clamp(pr.x, w[0], w[0] + w[2]), ny = clamp(pr.y, w[1], w[1] + w[3]), d = Math.hypot(pr.x - nx, pr.y - ny);
+    if (d < radius) damagePanel(m, i, Math.round(dmg * P.panelBlast * (1 - d / radius)));
+  });
   const owner = m.players.find(o => o.id === pr.owner);
   for (const o of m.players) {
     if (!o.alive || o.team === pr.team) continue;
@@ -595,7 +706,7 @@ function createPractice(sendFn, name, look) {
   const me = makePlayer('A', client.name, client, look);
   const players = [me];
   for (let i = 0; i < 6; i++) { const d = makePlayer('B', 'TARGET', null, DUMMY_LOOK); d.brain.dummy = true; players.push(d); }
-  const m = { mode: 'practice', practice: true, players, events: [], projectiles: [], fires: [], nextProj: 1,
+  const m = { mode: 'practice', practice: true, players, events: [], projectiles: [], fires: [], nextProj: 1, broken: new Set(), panelHp: new Map(),
     score: { A: 0, B: 0 }, round: 1, phase: 'fight', phaseT: 0, tick: 0, over: false };
   const [sx, sy, syaw] = MAP.spawns.A[0];
   Object.assign(me, { x: sx, y: sy, yaw: syaw }); me.input.yaw = syaw;
@@ -625,6 +736,43 @@ function handlePlay(client, msg) {
   }
 }
 
+function endRound(m, winner, reason) {
+  if (m.phase !== 'fight') return;
+  if (winner) m.score[winner]++;
+  m.phase = 'roundEnd'; m.phaseT = 180; m.roundWinner = winner; m.roundReason = reason;
+}
+
+// Extraction objective, once per tick during the fight
+function stepExtraction(m) {
+  const g = m.gem, A = m.attack, X = EXTRACT;
+  if (--m.timeLeft <= 0) return endRound(m, A === 'A' ? 'B' : 'A', 'time');   // defenders hold out
+  const alive = m.players.filter(p => p.alive);
+  if (g.state === 'home') {
+    // attackers standing at the gem extract it; a defender in range blocks (contests) it
+    const atk = alive.filter(p => p.team === A && Math.hypot(p.x - g.x, p.y - g.y) < X.extractR);
+    const def = alive.some(p => p.team !== A && Math.hypot(p.x - g.x, p.y - g.y) < X.extractR);
+    if (atk.length && !def) g.prog++;
+    else if (!atk.length) g.prog = Math.max(0, g.prog - 2);
+    if (g.prog >= X.extractTicks) {
+      const c = atk.reduce((a, p) => (Math.hypot(p.x - g.x, p.y - g.y) < Math.hypot(a.x - g.x, a.y - g.y) ? p : a));
+      g.state = 'carried'; g.carrier = c.id; g.prog = 0;
+      m.events.push(['gx', c.id]);
+    }
+  } else if (g.state === 'carried') {
+    const c = m.players.find(p => p.id === g.carrier);
+    if (!c || !c.alive) { g.state = 'dropped'; g.carrier = 0; m.events.push(['gd', Math.round(g.x), Math.round(g.y)]); }
+    else {
+      g.x = c.x; g.y = c.y;
+      const [bx, by, bw, bh] = MAP.bases[A];
+      if (c.x > bx && c.x < bx + bw && c.y > by && c.y < by + bh) { m.events.push(['gw', c.id]); return endRound(m, A, 'delivered'); }
+    }
+  } else if (g.state === 'dropped') {
+    const p = alive.find(o => Math.hypot(o.x - g.x, o.y - g.y) < X.pickR);
+    if (p && p.team === A) { g.state = 'carried'; g.carrier = p.id; m.events.push(['gp', p.id]); }
+    else if (p) { Object.assign(g, { state: 'home', x: MAP.gem[0], y: MAP.gem[1], prog: 0 }); m.events.push(['gr', p.id]); }
+  }
+}
+
 function switchWeapon(p, w) {
   if (!WEAPONS[w] || w === p.weapon) return;
   p.weapon = w; p.switchT = SWITCH_TICKS; p.burst = 0; p.onT = 0;
@@ -632,6 +780,7 @@ function switchWeapon(p, w) {
 
 function stepMatch(m) {
   m.tick++;
+  curBroken = m.broken || null;   // collision for this match
   if (m.phase === 'countdown') { if (--m.phaseT <= 0) m.phase = 'fight'; }
   else if (m.phase === 'roundEnd') {
     if (--m.phaseT <= 0) {
@@ -676,8 +825,24 @@ function stepMatch(m) {
     // so the challenge is keeping the crosshair on them while recoil kicks it up.
     const ready = (!p.bot || (!p.brain.dummy && p.brain.seen > p.brain.react)) && !p.running;   // bots react after a moment; dummies never shoot; nobody fires while running
     const tgt = m.phase === 'fight' && ready ? aimTarget(m, p) : null;
-    p.onT = tgt ? (p.onT || 0) + 1 : 0;                       // how long the crosshair has been on someone
+    // no enemy under the crosshair? a green panel close enough counts as a target too (shoot it down)
+    let pan = null;
+    if (!tgt && m.phase === 'fight' && ready && !p.bot && m.panelHp) {
+      const [ex2, ey2] = eyePos(p.x, p.y, p.yaw, p.lean || 0);
+      pan = panelUnder(ex2, ey2, STANCES[p.stance].eye, p.yaw, p.pitch);
+    }
+    p.onT = tgt || pan ? (p.onT || 0) + 1 : 0;                // how long the crosshair has been on someone
     if (p.switchT > 0) p.switchT--;
+    if (pan && p.cool <= 0 && p.switchT <= 0 && p.onT > P.fireDelay) {
+      const wn = p.weapon || 'rifle', W = WEAPONS[wn];
+      p.cool = W.cooldown; p.sinceShot = 0;
+      const [ox, oy] = eyePos(p.x, p.y, p.yaw, p.lean || 0);
+      const ex = Math.round(ox + Math.cos(p.yaw) * pan.t), ey = Math.round(oy + Math.sin(p.yaw) * pan.t);
+      m.events.push(['s', p.id, p.burst, ex, ey, Math.round(pan.h), W.code]);
+      m.events.push(['ph', pan.i, ex, ey, Math.round(pan.h)]);
+      damagePanel(m, pan.i, weaponDamage(wn, pan.t, false));
+      p.burst++;
+    }
     const hit = tgt && p.cool <= 0 && p.switchT <= 0 && (p.bot || p.onT > P.fireDelay) ? tgt : null;
     if (hit) {
       const wn = p.weapon || 'rifle', W = WEAPONS[wn];
@@ -695,17 +860,20 @@ function stepMatch(m) {
   }
   stepGrenades(m);
 
+  if (m.phase === 'fight' && m.mode === 'extraction') stepExtraction(m);
   if (m.phase === 'fight' && !m.practice) {
     const aliveA = m.players.some(p => p.team === 'A' && p.alive), aliveB = m.players.some(p => p.team === 'B' && p.alive);
-    if (!aliveA || !aliveB) {
-      if (aliveA) m.score.A++; else if (aliveB) m.score.B++;
-      m.phase = 'roundEnd'; m.phaseT = 150; m.roundWinner = aliveA ? 'A' : aliveB ? 'B' : null;
-    }
+    if (!aliveA || !aliveB) endRound(m, aliveA ? 'A' : aliveB ? 'B' : null, 'wiped');
   }
 
   if (m.tick % SEND_EVERY === 0) {
     const r1 = v => Math.round(v * 10) / 10, r3 = v => Math.round(v * 1000) / 1000;
+    const g = m.gem;
     const state = { t: 'state', tick: m.tick, phase: m.phase, phaseT: m.phaseT, round: m.round, score: m.score, roundWinner: m.roundWinner,
+      roundReason: m.roundReason || null,
+      broken: m.broken ? [...m.broken] : [], panels: m.panelHp ? [...m.panelHp].filter(([i]) => !m.broken.has(i)) : [],
+      ex: g ? { attack: m.attack, gem: [{ home: 0, carried: 1, dropped: 2 }[g.state], Math.round(g.x), Math.round(g.y), g.carrier, Math.round(g.prog / EXTRACT.extractTicks * 100)],
+        time: Math.max(0, Math.ceil(m.timeLeft / 60)) } : null,
       players: m.players.map(p => [p.id, r1(p.x), r1(p.y), p.hp, p.alive ? 1 : 0, r3(p.yaw), r3(p.pitch), p.kills,
         STANCE_CODE[p.stance] + (p.running ? 4 : 0) + (p.ads ? 8 : 0) + (p.lean < 0 ? 16 : p.lean > 0 ? 32 : 0), Math.ceil(p.cd.boom / 6), Math.ceil(p.cd.frag / 6), Math.ceil(p.cd.therm / 6), WEAPONS[p.weapon || 'rifle'].code + (p.switchT > 0 ? 2 : 0)]),
       proj: m.projectiles.map(pr => [pr.id, KIND_CODE[pr.kind], r1(pr.x), r1(pr.y), r1(pr.z), pr.team]),
@@ -760,5 +928,5 @@ function start(opts = {}) {
   runClock(tick);
 }
 
-return { connect, start, tick, matchmake, createPractice, MAP, P, LOOK_SIZES, STANCES, KINDS, recoilKick, blocked, lineOfSight, stepMovement, castRay, predictThrow, segmentClear, eyePos, WEAPONS, WEAPON_BY_CODE, weaponDamage, weaponKick, get botFillMs() { return BOT_FILL_MS; } };
+return { connect, start, tick, matchmake, createPractice, MAP, P, LOOK_SIZES, STANCES, KINDS, recoilKick, blocked, lineOfSight, stepMovement, castRay, predictThrow, segmentClear, eyePos, setBroken, panelUnder, EXTRACT, MODES, _matches: matches, WEAPONS, WEAPON_BY_CODE, weaponDamage, weaponKick, get botFillMs() { return BOT_FILL_MS; } };
 });

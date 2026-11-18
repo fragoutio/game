@@ -176,6 +176,21 @@ table.board td.k { text-align: right; }
 .gren .g.ready { box-shadow: 0 0 16px var(--yellow); }
 @media (max-width: 640px) { .gren .g { width: 70px; } .gren .g span { font-size: 12px; } }
 
+/* Extraction: role + round timer + gem status under the scorebar, gem marker, carrier banner */
+.ex-hud { position: absolute; top: calc(max(12px, env(safe-area-inset-top, 0px)) + 54px); left: 50%; transform: translateX(-50%);
+  background: var(--panel); border: 2px solid var(--panel-edge); padding: 4px 14px 6px; min-width: 260px; text-align: center; }
+.ex-top { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; font-family: var(--font-display); font-size: 22px; letter-spacing: 2px; }
+#ex-role.atk { color: var(--yellow); } #ex-role.def { color: var(--cyan); }
+#ex-time { font-variant-numeric: tabular-nums; } #ex-time.low { color: var(--team-b); }
+#ex-gem { font-size: 12px; letter-spacing: 1px; color: var(--text); }
+.ex-barwrap { height: 5px; background: #1b2150; margin-top: 4px; }
+#ex-bar { height: 100%; width: 0; background: #5dffb4; box-shadow: 0 0 8px #5dffb4; }
+#gem-marker { position: absolute; transform: translate(-50%, -100%); font-family: var(--font-display); font-size: 16px; letter-spacing: 1px;
+  color: #5dffb4; text-shadow: 0 0 6px #5dffb4, 0 1px 2px #000; white-space: nowrap; pointer-events: none; }
+#carry-banner { position: absolute; left: 50%; top: 26%; transform: translateX(-50%) skewX(-10deg); font-family: var(--font-display); font-size: 26px;
+  letter-spacing: 3px; color: #062a1b; background: #5dffb4; padding: 4px 18px; box-shadow: 0 0 18px #5dffb4; white-space: nowrap; }
+@media (max-width: 640px) { #carry-banner { font-size: 18px; } }
+
 /* practice range while matchmaking: swap the match HUD for a search banner */
 .practice-bar { display: none; position: absolute; top: max(12px, env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%) skewX(-10deg);
   background: var(--panel); border: 2px solid var(--yellow); padding: 6px 18px 8px; text-align: center; box-shadow: 5px 5px 0 rgba(0,0,0,0.4); }

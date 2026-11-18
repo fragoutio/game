@@ -76,6 +76,7 @@
     return tex;
   }
 
+  const panelMeshes = new Map();   // wall index -> green panel mesh
   function buildArena() {
     const g = new THREE.Group();
     const ground = new THREE.Mesh(new THREE.PlaneGeometry(160, 160), lam(0x202227));
@@ -101,6 +102,20 @@
     const bandA = basic(0xa7adb5), bandB = basic(0x8c9199);
     const VH = CP.ventH * S, ventDark = lam(0x0e0f12), ventBars = [];
     MAP.walls.forEach(([x, y, w, h, tall], i) => {
+      if (tall === 3) {   // green wood panel (breakable): planks + darker frame lines
+        const mat = lam(0x4f8f45);
+        const m = new THREE.Mesh(new THREE.BoxGeometry(w * S, BORDER_H, h * S), mat);
+        m.position.set((x + w / 2) * S, BORDER_H / 2, (y + h / 2) * S); g.add(m);
+        const lines = new THREE.LineSegments(new THREE.EdgesGeometry(m.geometry), new THREE.LineBasicMaterial({ color: 0x2c5a26 }));
+        m.add(lines);
+        const along = w > h, n = 4;
+        for (let k = 1; k < n; k++) {   // plank seams
+          const seam = new THREE.Mesh(new THREE.BoxGeometry(along ? 0.03 : w * S + 0.02, BORDER_H, along ? h * S + 0.02 : 0.03), lam(0x2f5c29));
+          seam.position.set(along ? (-w / 2 + w * k / n) * S : 0, 0, along ? 0 : (-h / 2 + h * k / n) * S); m.add(seam);
+        }
+        panelMeshes.set(i, { mesh: m, mat, base: new THREE.Color(0x4f8f45) });
+        return;
+      }
       if (tall === 2) {   // vent: wall above a low grated gap
         const up = new THREE.Mesh(new THREE.BoxGeometry(w * S, BORDER_H - VH, h * S), wallMat);
         up.position.set((x + w / 2) * S, VH + (BORDER_H - VH) / 2, (y + h / 2) * S); g.add(up);
@@ -538,7 +553,7 @@
     clearMatch();
     lastMode = mode; queueInfo = null; queueStart = performance.now();
     send({ t: 'queue', mode, name: profile.name || 'PLAYER', look: profile.look });
-    $('pb-mode').textContent = mode === '1v1' ? '1V1 DUEL' : '2V2 SQUADS';
+    $('pb-mode').textContent = { '1v1': '1V1 DUEL', '2v2': '2V2 SQUADS', extraction: '4V4 EXTRACTION' }[mode];
     startPractice();
   }
   function cancelQueue() { send({ t: 'cancel' }); stopPractice(); clearMatch(); sfx.back(); show('mode'); }
@@ -556,6 +571,7 @@
     actors.clear(); match = null; prevState = curState = null; matchOver = false;
     vmScene.remove(vm.group); $('feed').innerHTML = '';
     clearGrenadeFx();
+    resetPanels(); gemMesh.visible = false; $('gem-marker').hidden = true; $('ex-hud').hidden = true; $('carry-banner').hidden = true;
   }
   function clearMatchIfOver() { if (matchOver) clearMatch(); }
 
@@ -658,6 +674,12 @@
       }
       if (ev[0] === 'x') { explosionFx(ev[1], ev[2], ev[3], ev[4], ev[5]); continue; }
       if (ev[0] === 'b') { sfx.bounce(); continue; }
+      if (ev[0] === 'ph') { burst(ev[2] * S, ev[4] * S, ev[3] * S, 0x6fae5f, 5, 2); panelShake(ev[1]); continue; }
+      if (ev[0] === 'pb') { const p = panelMeshes.get(ev[1]); if (p) { burst(p.mesh.position.x, 1.2, p.mesh.position.z, 0x6fae5f, 30, 4); burst(p.mesh.position.x, 1, p.mesh.position.z, 0x8a5a2b, 16, 3); } sfx.boom(); continue; }
+      if (ev[0] === 'gx' || ev[0] === 'gp') { const a = actors.get(ev[1]); toast((a ? a.info.name : 'Someone') + (ev[0] === 'gx' ? ' extracted the gem!' : ' grabbed the gem')); sfx.ready(); continue; }
+      if (ev[0] === 'gd') { toast('The gem was dropped!'); sfx.denied(); continue; }
+      if (ev[0] === 'gr') { toast('The gem was returned to the middle'); continue; }
+      if (ev[0] === 'gw') { continue; }
       if (ev[0] === 'r') { if (ev[1] === match.you) { sfx.ready(); flashClass(document.querySelector('#gren [data-g="boom"]'), 'ready', 600); } continue; }
       if (ev[0] === 's') {
         const mine = ev[1] === match.you;
@@ -702,13 +724,15 @@
     // announcements from phase changes
     if (msg.phase === 'countdown') {
       const n = Math.ceil(msg.phaseT / 60);
-      if (lastPhase !== 'countdown' || n !== lastCount) { announce(String(n), msg.round === 1 ? 'MATCH FOUND' : `ROUND ${msg.round}`, '', 0); sfx.count(); lastCount = n; }
+      if (lastPhase !== 'countdown' || n !== lastCount) { announce(String(n), msg.ex ? (msg.ex.attack === match.myTeam ? 'ATTACK · EXTRACT THE GEM' : 'DEFEND THE GEM') : (msg.round === 1 ? 'MATCH FOUND' : `ROUND ${msg.round}`), '', 0); sfx.count(); lastCount = n; }
     } else if (msg.phase === 'fight' && lastPhase === 'countdown') { announce('FIGHT!', '', 'var(--yellow)', 700); sfx.fight(); }
     else if (msg.phase === 'roundEnd' && lastPhase !== 'roundEnd') {
       const w = msg.roundWinner;
-      announce(w ? `${TEAM[w].name} TAKES IT` : 'DRAW', `ROUND ${msg.round}`, w ? TEAM[w].css : '', 2000);
+      const why = { delivered: 'GEM DELIVERED', time: 'TIME RAN OUT', wiped: 'TEAM WIPED' }[msg.roundReason];
+      announce(w ? `${TEAM[w].name} TAKES IT` : 'DRAW', msg.ex && why ? why : `ROUND ${msg.round}`, w ? TEAM[w].css : '', 2400);
     }
     lastPhase = msg.phase;
+    syncPanels(msg);
     // HUD
     $('s-a').textContent = msg.score.A; $('s-b').textContent = msg.score.B;
     [...$('pips-a').children].forEach((p, i) => p.classList.toggle('on', i < msg.score.A));
@@ -1097,8 +1121,73 @@
 
   function setFov(f) { if (camera.fov !== f) { camera.fov = f; camera.updateProjectionMatrix(); } }
 
+  // ---------- Green panels + Extraction (gem, HUD) ----------
+  const brokenNow = new Set();
+  function resetPanels() {
+    brokenNow.clear(); Core.setBroken(brokenNow);
+    for (const p of panelMeshes.values()) { p.mesh.visible = true; p.mat.color.copy(p.base); p.mesh.position.x = p.mesh.position.x; p.shake = 0; }
+  }
+  function syncPanels(msg) {
+    const list = msg.broken || [];
+    if (list.length !== brokenNow.size || list.some(i => !brokenNow.has(i))) {
+      if (list.length < brokenNow.size) resetPanels();   // new round: panels rebuilt
+      for (const i of list) { brokenNow.add(i); const p = panelMeshes.get(i); if (p) p.mesh.visible = false; }
+    }
+    for (const [i, hp] of msg.panels || []) {   // darker as it gets shot up
+      const p = panelMeshes.get(i); if (p) p.mat.color.copy(p.base).multiplyScalar(0.45 + 0.55 * Math.max(0, hp) / CP.panelHp);
+    }
+  }
+  function panelShake(i) { const p = panelMeshes.get(i); if (p) p.shake = 0.15; }
+  const gemMesh = new THREE.Group();
+  {
+    const core = new THREE.Mesh(new THREE.OctahedronGeometry(0.32, 0), basic(0x5dffb4));
+    const shell = new THREE.Mesh(new THREE.OctahedronGeometry(0.46, 0), basic(0x5dffb4, { transparent: true, opacity: 0.25, depthWrite: false }));
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 8, 6), basic(0x5dffb4, { transparent: true, opacity: 0.35, depthWrite: false }));
+    beam.position.y = 4; gemMesh.add(core, shell, beam); gemMesh.visible = false; scene.add(gemMesh);
+    gemMesh.userData.beam = beam;
+  }
+  const pedestalGem = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.6, 0.4, 8), lam(0x55595f));
+  pedestalGem.position.set(MAP.gem[0] * S, 0.2, MAP.gem[1] * S); scene.add(pedestalGem);
+  function updateExtraction(dt, now) {
+    for (const p of panelMeshes.values()) if (p.shake > 0) { p.shake = Math.max(0, p.shake - dt); p.mesh.rotation.y = (Math.random() - 0.5) * p.shake * 0.2; }
+    const ex = curState && curState.ex;
+    const hud = $('ex-hud');
+    if (!ex || match.practice) { hud.hidden = true; gemMesh.visible = false; $('gem-marker').hidden = true; $('carry-banner').hidden = true; return; }
+    hud.hidden = false;
+    const [state, gx, gy, carrier, prog] = ex.gem;
+    const attacking = ex.attack === match.myTeam;
+    $('ex-role').textContent = attacking ? 'ATTACK' : 'DEFEND';
+    $('ex-role').className = attacking ? 'atk' : 'def';
+    $('ex-time').textContent = `${Math.floor(ex.time / 60)}:${String(ex.time % 60).padStart(2, '0')}`;
+    $('ex-time').classList.toggle('low', ex.time <= 30);
+    const carrierName = carrier && actors.get(carrier) ? actors.get(carrier).info.name : '';
+    $('ex-gem').textContent = state === 0 ? (prog > 0 ? `EXTRACTING ${prog}%` : (attacking ? 'Stand at the gem for 3 s to extract it' : 'Keep them off the gem'))
+      : state === 1 ? (carrier === match.you ? 'YOU HAVE THE GEM' : `${carrierName} HAS THE GEM`) : (attacking ? 'GEM DROPPED · pick it up' : 'GEM DROPPED · touch it to send it back');
+    $('ex-bar').style.width = `${state === 0 ? prog : 0}%`;
+    $('carry-banner').hidden = !(state === 1 && carrier === match.you);
+    // gem in the world: on its pedestal, above its carrier's head, or on the floor
+    let wx = gx * S, wz = gy * S, wy = state === 0 ? 1.1 : 0.5;
+    if (state === 1) { const a = actors.get(carrier); if (a) { wx = a.x; wz = a.z; } wy = 2.4; }
+    gemMesh.visible = !(state === 1 && carrier === match.you);
+    gemMesh.position.set(wx, wy + Math.sin(now * 0.003) * 0.08, wz);
+    gemMesh.rotation.y = now * 0.002;
+    // on-screen marker so everyone can always find the gem
+    const mk = $('gem-marker');
+    proj.set(wx, wy + 0.6, wz).project(camera);
+    const show = proj.z < 1 && !(state === 1 && carrier === match.you);
+    mk.hidden = !show;
+    if (show) {
+      mk.style.left = `${Math.max(20, Math.min(innerWidth - 20, (proj.x * 0.5 + 0.5) * innerWidth))}px`;
+      mk.style.top = `${Math.max(60, Math.min(innerHeight - 20, (-proj.y * 0.5 + 0.5) * innerHeight))}px`;
+      const d = Math.round(Math.hypot(gx - me.x, gy - me.y) / 24);
+      mk.textContent = `◆ ${d} m`;
+    }
+  }
+
   function updateMatch(dt, now) {
     if (!curState) return;
+    Core.setBroken(brokenNow);   // your own movement/aim checks use the panels you can see broken
+    updateExtraction(dt, now);
     const mv = controls(lastPad, dt);
     lastMove = mv;
     const moving = predictMove(mv, dt);
@@ -1184,6 +1273,10 @@
     for (const [x, y, w, h, t] of MAP.walls) {   // vents in amber so you can spot grenade routes
       mctx.fillStyle = t === 2 ? '#d9a441' : '#8a8f98';
       mctx.fillRect(x * k, y * k, Math.max(1, w * k), Math.max(1, h * k));
+    }
+    if (curState && curState.ex) {   // bases and the gem
+      for (const t of ['A', 'B']) { const [bx, by, bw, bh] = MAP.bases[t]; mctx.strokeStyle = t === 'A' ? '#3fa9ff' : '#ff4566'; mctx.strokeRect(bx * k, by * k, bw * k, bh * k); }
+      mctx.fillStyle = '#5dffb4'; mctx.beginPath(); mctx.arc(curState.ex.gem[1] * k, curState.ex.gem[2] * k, 4, 0, Math.PI * 2); mctx.fill();
     }
     if (match) for (const [id, a] of actors) {
       if (id === match.you || a.info.team !== match.myTeam || !a.alive) continue;
