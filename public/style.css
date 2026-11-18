@@ -222,6 +222,17 @@ table.board td.k { text-align: right; }
 #scope .holo { position: relative; width: 70px; height: 70px; }
 #scope .holo i { position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--c); box-shadow: 0 0 6px var(--c), 0 0 6px var(--c) inset; }
 #scope .holo b { position: absolute; left: 50%; top: 50%; width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px; border-radius: 50%; background: var(--c); box-shadow: 0 0 6px var(--c); }
+/* shotgun sight: no round frame — four corner brackets marking the pellet spread around a centre dot */
+#scope .spread { display: none; position: relative; width: 120px; height: 120px; }
+#scope.sg .frame, #scope.sg .holo { display: none; }
+#scope.sg .spread { display: block; }
+#scope.sg::before { content: ''; position: absolute; inset: 0; background: radial-gradient(ellipse at center, transparent 40%, rgba(5, 6, 15, 0.35) 100%); }
+#scope .spread s { position: absolute; width: 26px; height: 26px; border: 3px solid var(--c); filter: drop-shadow(0 0 3px var(--c)); }
+#scope .spread s:nth-child(1) { left: 0; top: 0; border-right: none; border-bottom: none; }
+#scope .spread s:nth-child(2) { right: 0; top: 0; border-left: none; border-bottom: none; }
+#scope .spread s:nth-child(3) { left: 0; bottom: 0; border-right: none; border-top: none; }
+#scope .spread s:nth-child(4) { right: 0; bottom: 0; border-left: none; border-top: none; }
+#scope .spread b { position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: var(--c); box-shadow: 0 0 6px var(--c); }
 @media (prefers-reduced-motion: reduce) { #scope { transition: none; } }
 #vignette { position: absolute; inset: 0; opacity: 0; transition: opacity 0.25s;
   background: radial-gradient(ellipse at center, transparent 45%, rgba(255, 30, 60, 0.55) 100%); }

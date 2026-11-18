@@ -116,11 +116,15 @@
     const barrel = add(cyl(0.035, 0.035, 0.2, 6), mats.frame, 0, 0.01, 0.28, rifle);
     barrel.rotation.x = Math.PI / 2;
     // shotgun: chunky receiver, long fat barrel, pump grip, team-coloured stripe
-    add(box(0.12, 0.14, 0.3), mats.gun, 0, 0, -0.06, shotgun);
-    add(box(0.07, 0.14, 0.08), mats.gun, 0, -0.12, -0.12, shotgun);
-    const sgBarrel = add(cyl(0.05, 0.05, 0.42, 7), mats.frame, 0, 0.03, 0.22, shotgun); sgBarrel.rotation.x = Math.PI / 2;
-    const pump = add(cyl(0.06, 0.06, 0.14, 7), mats.gun, 0, -0.04, 0.2, shotgun); pump.rotation.x = Math.PI / 2;
-    add(box(0.125, 0.03, 0.2), mats.team, 0, 0.065, -0.04, shotgun);
+    // long lever-action style: stock, receiver, long barrel + choke, tube magazine, fore-grip
+    add(box(0.09, 0.11, 0.24), mats.gun, 0, -0.03, -0.26, shotgun);                       // stock
+    add(box(0.12, 0.14, 0.28), mats.gun, 0, 0, -0.04, shotgun);                           // receiver
+    add(box(0.07, 0.14, 0.08), mats.gun, 0, -0.12, -0.1, shotgun);                        // grip
+    const sgBarrel = add(cyl(0.04, 0.04, 0.66, 7), mats.frame, 0, 0.03, 0.42, shotgun); sgBarrel.rotation.x = Math.PI / 2;
+    const choke = add(cyl(0.055, 0.055, 0.08, 7), mats.gun, 0, 0.03, 0.76, shotgun); choke.rotation.x = Math.PI / 2;
+    const tubeMag = add(cyl(0.028, 0.028, 0.52, 6), mats.gun, 0, -0.03, 0.36, shotgun); tubeMag.rotation.x = Math.PI / 2;
+    const pump = add(cyl(0.055, 0.055, 0.16, 7), mats.gun, 0, -0.025, 0.36, shotgun); pump.rotation.x = Math.PI / 2;
+    add(box(0.125, 0.03, 0.2), mats.team, 0, 0.075, -0.04, shotgun);
     shotgun.visible = false;
     const muzzle = pivot(0, 0.01, 0.4, gun);
     const flash = new THREE.Mesh(G('flash', () => new THREE.OctahedronGeometry(0.13, 0)),

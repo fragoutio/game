@@ -189,12 +189,20 @@
     add(new THREE.BoxGeometry(0.06, 0.13, 0.07), gunMat, 0, -0.1, 0.06, rifle);                    // grip
     add(new THREE.BoxGeometry(0.05, 0.04, 0.12), dark, 0, 0.08, -0.02, rifle);                     // sight
     const barrel = add(new THREE.CylinderGeometry(0.028, 0.028, 0.2, 6), dark, 0, 0.005, -0.36, rifle); barrel.rotation.x = Math.PI / 2;
-    // shotgun: wide receiver, fat barrel, pump that slides back after each shot
-    add(new THREE.BoxGeometry(0.11, 0.12, 0.3), gunMat, 0, 0, -0.02, shotgun);
-    add(new THREE.BoxGeometry(0.06, 0.13, 0.07), gunMat, 0, -0.1, 0.06, shotgun);
-    add(new THREE.BoxGeometry(0.115, 0.025, 0.24), glow, 0, 0.05, -0.02, shotgun);
-    const sgBarrel = add(new THREE.CylinderGeometry(0.042, 0.042, 0.36, 7), dark, 0, 0.02, -0.33, shotgun); sgBarrel.rotation.x = Math.PI / 2;
-    vm.pump = add(new THREE.CylinderGeometry(0.05, 0.05, 0.13, 7), gunMat, 0, -0.035, -0.3, shotgun); vm.pump.rotation.x = Math.PI / 2;
+    // shotgun: long lever-action style — stock, boxy receiver, long barrel with a flared choke, tube magazine
+    // underneath, a fore-grip that racks back and a side lever that flips after each shot
+    const tube = (r, len, mat, x, y, zc) => { const m = add(new THREE.CylinderGeometry(r, r, len, 8), mat, x, y, zc, shotgun); m.rotation.x = Math.PI / 2; return m; };
+    add(new THREE.BoxGeometry(0.08, 0.1, 0.22), gunMat, 0, -0.035, 0.2, shotgun);                  // stock
+    add(new THREE.BoxGeometry(0.11, 0.13, 0.26), gunMat, 0, 0, -0.04, shotgun);                   // receiver
+    add(new THREE.BoxGeometry(0.06, 0.13, 0.07), gunMat, 0, -0.1, 0.06, shotgun);                  // grip
+    add(new THREE.BoxGeometry(0.115, 0.022, 0.2), glow, 0, 0.065, -0.04, shotgun);                 // team stripe
+    tube(0.034, 0.62, dark, 0, 0.03, -0.47);                                                      // long barrel
+    tube(0.048, 0.07, gunMat, 0, 0.03, -0.8);                                                     // flared choke
+    tube(0.024, 0.5, gunMat, 0, -0.025, -0.4);                                                    // tube magazine
+    add(new THREE.BoxGeometry(0.02, 0.03, 0.03), glow, 0, 0.065, -0.76, shotgun);                 // front sight
+    vm.pump = tube(0.047, 0.16, gunMat, 0, -0.02, -0.36);                                          // fore-grip
+    vm.lever = new THREE.Group(); vm.lever.position.set(0.058, -0.03, 0.02); shotgun.add(vm.lever);
+    add(new THREE.BoxGeometry(0.012, 0.025, 0.14), glow, 0, 0, -0.04, vm.lever);                   // side lever
     vm.guns = { rifle, shotgun };
     // right hand + sleeve on the grip, left hand under the barrel
     add(new THREE.IcosahedronGeometry(0.05, 0), glove, 0.01, -0.12, 0.07, gun);
@@ -996,6 +1004,7 @@
   // While crouched, tap Q or E: raise the sight (1.3x zoom, HOG-style ring sight). While aiming, Q leans left
   // and E leans right (tap the same key again to straighten up). Space lowers the sight; standing up does too.
   const ADS_FOV = 2 * Math.atan(Math.tan(75 / 2 * Math.PI / 180) / 1.3) * 180 / Math.PI;   // 1.3x zoom over the 75 deg view
+  const ADS_FOV_SG = 2 * Math.atan(Math.tan(75 / 2 * Math.PI / 180) / 1.15) * 180 / Math.PI; // shotgun: lighter 1.15x
   function sightKey(side) {
     if (!me.alive) return;
     if (me.stance !== 'crouch') {   // you can only aim down the sight while crouched
@@ -1020,7 +1029,7 @@
     const side = me.leanAmt < 0 ? -1 : 1, [lx, ly] = Core.eyePos(me.x, me.y, me.yaw, Math.abs(me.leanAmt) > 0.01 ? side : 0);
     const lk = Math.abs(me.leanAmt);
     wantPos.set((me.x + (lx - me.x) * lk) * S, me.eyeY + bob, (me.y + (ly - me.y) * lk) * S);
-    const fov = me.stance === 'slide' ? 86 : me.running ? 82 : me.ads ? ADS_FOV : 75;
+    const fov = me.stance === 'slide' ? 86 : me.running ? 82 : me.ads ? (me.weapon === 'shotgun' ? ADS_FOV_SG : ADS_FOV) : 75;
     me.fov += (fov - me.fov) * Math.min(1, dt * 8);
     setFov(Math.round(me.fov * 10) / 10);
     me.roll += ((me.stance === 'slide' ? 0.07 : 0) - me.leanAmt * 0.14 - me.roll) * Math.min(1, dt * 10);
@@ -1038,6 +1047,7 @@
     // aiming down the sight: the ring sight replaces the crosshair (same yellow/red states), tilted with a lean
     const scope = $('scope');
     scope.classList.toggle('on', !!me.ads);
+    scope.classList.toggle('sg', me.weapon === 'shotgun');   // shotgun: spread-bracket sight instead of the ring
     scope.classList.toggle('arming', ret.classList.contains('arming'));
     scope.classList.toggle('hot', onTarget);
     scope.style.transform = `rotate(${(-me.roll).toFixed(3)}rad)`;
@@ -1069,7 +1079,10 @@
     vm.switchT = Math.max(0, (vm.switchT || 0) - dt);
     vm.group.position.y -= Math.sin(Math.min(1, vm.switchT / 0.4) * Math.PI) * 0.18;
     vm.pumpT = Math.max(0, (vm.pumpT || 0) - dt);
-    if (vm.pump) vm.pump.position.z = -0.3 + Math.sin(Math.min(1, vm.pumpT / 0.75) * Math.PI) * 0.09;
+    const rack = Math.sin(Math.min(1, vm.pumpT / 0.75) * Math.PI);
+    if (vm.pump) vm.pump.position.z = -0.36 + rack * 0.1;
+    if (vm.lever) vm.lever.rotation.x = rack * 0.9;
+    vm.flash.position.z = me.weapon === 'shotgun' ? -0.86 : -0.5;   // muzzle flash at the end of the long barrel
     vm.throwT = Math.max(0, (vm.throwT || 0) - dt);
     const th = Math.sin(Math.min(1, (0.35 - vm.throwT) / 0.35) * Math.PI) * (vm.throwT > 0 ? 1 : 0);
     vm.group.position.y -= th * 0.12;
