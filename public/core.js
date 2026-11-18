@@ -70,10 +70,10 @@ const STANCE_CODE = { stand: 0, crouch: 1, slide: 2 };
 const WEAPONS = {
   // rifle: 1 health per body hit, 3 per headshot, steady fire, recoil pattern from recoilKick()
   rifle: { code: 0, cooldown: 7, body: 20, head: 60, spread: 2, range: Infinity },
-  // shotgun: up close (within `close` px) 3 health to the body, 4 to the head; damage falls off to
-  // `minFactor` by `far`, and it won't fire beyond `range`. Wide spread (forgiving aim), pumps between
-  // shots, one big kick per shot.
-  shotgun: { code: 1, cooldown: 54, body: 60, head: 80, spread: 7, close: 60, far: 220, minFactor: 0.25, range: 260,
+  // shotgun: up close (within `close` px) 4 health to the body, 5 to the head (a one-shot knockout); damage
+  // drops steeply to `minFactor` (about 1 health) by `far`, and it won't fire beyond `range`. Only worth it
+  // up close. Wide spread (forgiving aim), pumps between shots, one big kick per shot.
+  shotgun: { code: 1, cooldown: 54, body: 80, head: 100, spread: 7, close: 60, far: 160, minFactor: 0.25, range: 260,
     kick: 0.075, kickYaw: 0.02 },
 };
 const WEAPON_BY_CODE = ['rifle', 'shotgun'];
