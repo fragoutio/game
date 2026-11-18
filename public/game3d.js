@@ -129,7 +129,7 @@
         frame.position.set(up.position.x, VH, up.position.z); g.add(frame);
         return;
       }
-      const border = i < 4 || tall === 1, H = border ? BORDER_H : CRATE_H;
+      const border = i < 4 || tall === 1, H = i < 4 ? 7 : border ? BORDER_H : CRATE_H;
       const geo = new THREE.BoxGeometry(w * S, H, h * S);
       const m = new THREE.Mesh(geo, border ? wallMat : crateMat);
       m.position.set((x + w / 2) * S, H / 2, (y + h / 2) * S); g.add(m);
@@ -147,6 +147,37 @@
         edges.position.copy(m.position); g.add(edges);
       }
     });
+
+    // upstairs: balcony floors (with a trim along the edge you can drop off), low railings, stepped stairs
+    const UPS = MAP.upper, FZ = UPS.floor * S;
+    const slabMat = lam(0x6d7179), slabEdge = basic(0x5dffb4), railMat = lam(0x9aa0a8), stepMat = lam(0x80848c);
+    for (const [sx, sy, sw, sh] of UPS.slabs) {
+      const slab = new THREE.Mesh(new THREE.BoxGeometry(sw * S, 0.18, sh * S), slabMat);
+      slab.position.set((sx + sw / 2) * S, FZ - 0.09, (sy + sh / 2) * S); g.add(slab);
+      const under = new THREE.Mesh(new THREE.BoxGeometry(sw * S, 0.02, sh * S), lam(0x2a2c31));
+      under.position.set(slab.position.x, FZ - 0.19, slab.position.z); g.add(under);
+    }
+    for (const [rx, ry, rw, rh] of UPS.rails) {
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(rw * S, UPS.rail * S, rh * S), railMat);
+      rail.position.set((rx + rw / 2) * S, FZ + UPS.rail * S / 2, (ry + rh / 2) * S); g.add(rail);
+    }
+    // the open edges over the gem room get a glowing strip so you can see where to drop down
+    for (const [sx, sy, sw, sh] of UPS.slabs) {
+      const edgeY = sy + sh / 2 < MAP.gem[1] ? sy + sh : sy;
+      const strip = new THREE.Mesh(new THREE.BoxGeometry(224 * S, 0.04, 0.08), slabEdge);
+      strip.position.set(MAP.gem[0] * S, FZ + 0.02, edgeY * S); g.add(strip);
+    }
+    for (const [sx, sy, sw, sh, dir] of UPS.stairs) {
+      const n = 10, vertical = dir === 'N' || dir === 'S';
+      for (let k = 0; k < n; k++) {
+        const top = Math.min(1, (k + 1) / n / 0.8) * FZ;
+        const along = vertical ? sh : sw, step = along / n;
+        const pos = dir === 'S' || dir === 'E' ? k * step : along - (k + 1) * step;
+        const box = new THREE.Mesh(new THREE.BoxGeometry(vertical ? sw * S : step * S, top, vertical ? step * S : sh * S), k % 2 ? stepMat : slabMat);
+        box.position.set((vertical ? sx + sw / 2 : sx + pos + step / 2) * S, top / 2, (vertical ? sy + pos + step / 2 : sy + sh / 2) * S);
+        g.add(box);
+      }
+    }
 
     // vent grate bars: one instanced mesh for every vent (cheap on school computers)
     if (ventBars.length) {
@@ -563,7 +594,7 @@
   let lastPhase = '', lastCount = 0, lastRound = 0, shake = 0, endTimer = 0;
   // your own view and position run on this computer so turning and walking feel instant
   const me = { yaw: 0, pitch: 0, x: 0, y: 0, alive: true, holdYaw: 0, holdPitch: 0, burstT: 0, bursts: 0,
-    stance: 'stand', running: false, slideT: 0, slideCd: 0, slideX: 0, slideY: 0, acc: 0, eyeY: EYE_Y, fov: 75, roll: 0 };
+    stance: 'stand', running: false, slideT: 0, slideCd: 0, slideX: 0, slideY: 0, acc: 0, z: 0, vz: 0, eyeY: EYE_Y, fov: 75, roll: 0 };
 
   function clearMatch() {
     clearTimeout(endTimer);
@@ -660,11 +691,15 @@
     if (row && msg.round !== lastRound) {
       lastRound = msg.round;
       me.yaw = row[5]; me.pitch = 0; me.x = row[1]; me.y = row[2]; me.bursts = 0;
-      Object.assign(me, { stance: 'stand', running: false, slideT: 0, slideCd: 0, acc: 0, ads: false, lean: 0 });
+      Object.assign(me, { stance: 'stand', running: false, slideT: 0, slideCd: 0, acc: 0, ads: false, lean: 0, z: row[13] || 0, vz: 0 });
       if (!me.weapon) me.weapon = 'rifle';
       updateWeaponHud();
     }
+    if (row && row[4] && !me.alive) { me.x = row[1]; me.y = row[2]; me.z = row[13] || 0; me.vz = 0; me.yaw = row[5]; me.pitch = 0; }   // respawned
     if (row) me.alive = !!row[4];
+    if (row && !row[4] && row[14] > 0 && msg.phase === 'fight') announce(`RESPAWNING IN ${row[14]}`, 'back in the far corner of your base', 'var(--cyan)', 0);
+    else if (row && row[4] && me.wasWaiting) announce('');
+    me.wasWaiting = !!(row && !row[4] && row[14] > 0);
 
     for (const ev of msg.ev || []) {
       if (ev[0] === 'g') {
@@ -815,8 +850,8 @@
     const [eyeX, eyeY] = Core.eyePos(me.x, me.y, me.yaw, me.lean || 0);
     const W = Core.WEAPONS[me.weapon || 'rifle'];
     if (performance.now() < (me.switchUntil || 0)) return null;
-    const hit = Core.castRay(eyeX, eyeY, Core.STANCES[me.stance].eye, me.yaw, me.pitch,
-      cands.map(c => ({ x: c.sx, y: c.sy, stance: c.stance || 'stand', ref: c })), W.spread);
+    const hit = Core.castRay(eyeX, eyeY, (me.z || 0) + Core.STANCES[me.stance].eye, me.yaw, me.pitch,
+      cands.map(c => ({ x: c.sx, y: c.sy, z: c.sz || 0, stance: c.stance || 'stand', ref: c })), W.spread);
     return hit && hit.along <= W.range ? { c: hit.c.ref, along: hit.along, h: hit.h, head: hit.head } : null;
   }
   function onTargetNow() {
@@ -880,7 +915,7 @@
   const pvFire = new THREE.Mesh(new THREE.BoxGeometry(1, 0.06, 0.45), basic(0xff5a1a, { transparent: true, opacity: 0.55, depthWrite: false })); preview.add(pvFire);
   function updateAimPreview(now) {
     if (!aiming || !me.alive || !curState || curState.phase !== 'fight') { if (aiming) cancelAim(); return; }
-    const r = Core.predictThrow(aiming, me.x, me.y, me.stance, me.yaw, me.pitch);
+    const r = Core.predictThrow(aiming, me.x, me.y, me.stance, me.yaw, me.pitch, me.z || 0);
     if (!r) { preview.visible = false; return; }
     preview.visible = true;
     const arr = pvGeo.attributes.position.array, n = Math.min(PREVIEW_MAX, r.points.length);
@@ -946,6 +981,7 @@
   const fireGlowMat = basic(0xff6a00, { transparent: true, opacity: 0.4, depthWrite: false });
   function makeFire(f) {
     const [, x1, y1, x2, y2] = f, g = new THREE.Group(), flames = [];
+    g.position.y = (f[7] || 0) * S;
     const len = Math.hypot(x2 - x1, y2 - y1) * S, n = 11;
     for (let i = 0; i < n; i++) {
       const k = i / (n - 1), m = new THREE.Mesh(flameGeo, flameMats[i % 3]);
@@ -1052,7 +1088,7 @@
     me.leanAmt = (me.leanAmt || 0) + ((me.lean || 0) - (me.leanAmt || 0)) * Math.min(1, dt * 12);
     const side = me.leanAmt < 0 ? -1 : 1, [lx, ly] = Core.eyePos(me.x, me.y, me.yaw, Math.abs(me.leanAmt) > 0.01 ? side : 0);
     const lk = Math.abs(me.leanAmt);
-    wantPos.set((me.x + (lx - me.x) * lk) * S, me.eyeY + bob, (me.y + (ly - me.y) * lk) * S);
+    wantPos.set((me.x + (lx - me.x) * lk) * S, (me.z || 0) * S + me.eyeY + bob, (me.y + (ly - me.y) * lk) * S);
     const fov = me.stance === 'slide' ? 86 : me.running ? 82 : me.ads ? (me.weapon === 'shotgun' ? ADS_FOV_SG : ADS_FOV) : 75;
     me.fov += (fov - me.fov) * Math.min(1, dt * 8);
     setFov(Math.round(me.fov * 10) / 10);
@@ -1206,13 +1242,14 @@
       const q = prev.get(p[0]) || p;
       act.sx = q[1] + (p[1] - q[1]) * a; act.sy = q[2] + (p[2] - q[2]) * a; act.alive = !!p[4];
       act.stance = ['stand', 'crouch', 'slide'][p[8] & 3] || 'stand';
+      act.sz = (q[13] || 0) + ((p[13] || 0) - (q[13] || 0)) * a;
       act.lean = p[8] & 16 ? -1 : p[8] & 32 ? 1 : 0;
       const w = (p[12] || 0) & 1 ? 'shotgun' : 'rifle';
       if (act.weapon !== w) { act.weapon = w; act.ch.setWeapon(w); }
       if (p[0] === match.you) {
         // keep the prediction honest: ease toward the server when idle, snap if far off
         const err = Math.hypot(act.sx - me.x, act.sy - me.y);
-        if (err > 36 || !me.alive) { me.x = act.sx; me.y = act.sy; }
+        if (err > 36 || !me.alive) { me.x = act.sx; me.y = act.sy; me.z = act.sz; me.vz = 0; }
         else if (!moving) { me.x += (act.sx - me.x) * 0.15; me.y += (act.sy - me.y) * 0.15; }
         act.label.style.display = 'none';
         continue;
@@ -1222,13 +1259,13 @@
       const sp = Math.hypot(x - act.x, z - act.z) / Math.max(dt, 1e-3);
       act.speed = act.speed * 0.8 + Math.min(sp, 8) * 0.2;
       act.x = x; act.z = z;
-      act.ch.root.position.set(x, 0, z);
+      act.ch.root.position.set(x, act.sz * S, z);
       act.yaw = lerpAngle(act.yaw, Math.PI / 2 - p[5], Math.min(1, dt * 18));
       act.ch.root.rotation.y = act.yaw;
       Chars.animateCharacter(act.ch, dt, act.speed, !!p[4], p[6], act.stance, act.lean);
       // names: teammates always, enemies only when you can actually see them
-      proj.set(x, 2.05, z).project(camera);
-      const seen = act.info.team === match.myTeam || !me.alive || Core.lineOfSight(me.x, me.y, act.sx, act.sy);
+      proj.set(x, 2.05 + act.sz * S, z).project(camera);
+      const seen = act.info.team === match.myTeam || !me.alive || Core.lineOfSight(me.x, me.y, act.sx, act.sy, (me.z || 0) + 33, act.sz + 33);
       const vis = p[4] && proj.z < 1 && seen;
       act.label.style.display = vis ? '' : 'none';
       if (vis) {
@@ -1270,6 +1307,8 @@
     const k = mm.width / MAP.w;
     mctx.clearRect(0, 0, mm.width, mm.height);
     mctx.fillStyle = 'rgba(20,22,27,0.85)'; mctx.fillRect(0, 0, mm.width, mm.height);
+    mctx.fillStyle = 'rgba(93,255,180,0.12)';   // balconies (upstairs)
+    for (const [x, y, w, h] of MAP.upper.slabs) mctx.fillRect(x * k, y * k, w * k, h * k);
     for (const [x, y, w, h, t] of MAP.walls) {   // vents in amber so you can spot grenade routes
       mctx.fillStyle = t === 2 ? '#d9a441' : '#8a8f98';
       mctx.fillRect(x * k, y * k, Math.max(1, w * k), Math.max(1, h * k));

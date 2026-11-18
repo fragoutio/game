@@ -132,6 +132,14 @@ is knocked out the gem drops: an attacker can grab it, a defender touching it se
 Defenders win when time runs out or all attackers are down; attackers win by delivering the gem or wiping the
 defenders. Bots fill empty slots after 30 s and play the objective. Tuning: `EXTRACT` in `public/core.js`.
 
+**Upstairs:** two balconies above the corridors north and south of the gem room, reached by stairs in the north
+and south rooms. From the balcony edge you look over the walls down into the gem room; low railings let you shoot
+over them standing and hide crouched; the edge over the gem room is open so you can drop down into it. Players,
+shots, sight and grenades all use heights (`MAP.upper`, `clear3`, `supportAt` in `public/core.js`). Bots stay downstairs.
+
+**Defenders respawn** 10 s after going down, in the far back corner of their own base (`MAP.respawn`). Attackers
+don't respawn, so a round ends when the gem is delivered, time runs out, or all attackers are down.
+
 **Green wood panels** cover some doorways. They block movement and sight until broken: your gun fires at a panel
 under the crosshair within 220 px, and grenade blasts splinter them. Panels are rebuilt each round.
 

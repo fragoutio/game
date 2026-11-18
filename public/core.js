@@ -46,8 +46,44 @@ const MAP = {
   // Extraction: the gem sits here; defenders spawn around it; attackers deliver it to their own base
   gem: [640,480],
   defend: [[560, 420, 0], [720, 420, 3.14], [560, 540, 0], [720, 540, 3.14]],
-  bases: { A: [32,32,224,896], B: [1024,32,224,896] },
+  bases: { A: [32, 32, 224, 896], B: [1024, 32, 224, 896] },
+  // Upstairs: two balconies over the corridors north and south of the gem room, `floor` px up (just above
+  // the room walls, so you look over them into the gem room). Low railings (`rail` px) — stand to shoot over
+  // them, crouch to hide. The edge facing the gem room has no railing: walk off it to drop down.
+  // Stairs [x, y, w, h, dir]: a ramp rising toward dir ('N' up = -y, 'S' = +y) to the balcony.
+  upper: {
+    floor: 80, rail: 22,
+    slabs: [[432, 208, 416, 176], [432, 576, 416, 176]],
+    rails: [
+      [432, 208, 208, 6], [704, 208, 144, 6], [432, 208, 6, 176], [842, 208, 6, 176], [432, 378, 96, 6], [752, 378, 96, 6],
+      [432, 746, 144, 6], [640, 746, 208, 6], [432, 576, 6, 176], [842, 576, 6, 176], [432, 576, 96, 6], [752, 576, 96, 6],
+    ],
+    stairs: [[640, 64, 64, 144, 'S'], [576, 752, 64, 144, 'N']],
+  },
+  // Extraction: knocked-out defenders come back after 10 s in a far back corner of their own base
+  respawn: { A: [[60, 64, 0.6], [60, 896, -0.6]], B: [[1220, 896, -2.5], [1220, 64, 2.5]] },
 };
+const UP = MAP.upper;
+const inRect = (r, x, y) => x >= r[0] && x <= r[0] + r[2] && y >= r[1] && y <= r[1] + r[3];
+// how tall each wall is: the outer border blocks everything, crates are 62 px, room walls/vents/panels 77 px
+const wallTop = i => (i < 4 ? 9999 : MAP.walls[i][4] ? 77 : 62);
+// height of a stair ramp under (x, y), or -1 if not on stairs
+function rampAt(x, y) {
+  for (const [sx, sy, sw, sh, dir] of UP.stairs) {
+    if (!inRect([sx, sy, sw, sh], x, y)) continue;
+    const k = dir === 'S' ? (y - sy) / sh : dir === 'N' ? (sy + sh - y) / sh : dir === 'E' ? (x - sx) / sw : (sx + sw - x) / sw;
+    return Math.max(0, Math.min(1, k / 0.8)) * UP.floor;   // full height for the last fifth, so you step straight onto the balcony
+  }
+  return -1;
+}
+// what you'd stand on at (x, y) coming from height z: the ground, a stair, or a balcony (only if you're up there)
+function supportAt(x, y, z) {
+  let h = 0;
+  const r = rampAt(x, y);
+  if (r >= 0 && r <= z + 14) h = Math.max(h, r);
+  if (z >= UP.floor - 14 && UP.slabs.some(sl => inRect(sl, x, y))) h = Math.max(h, UP.floor);
+  return h;
+}
 
 const P = {
   // sizes in arena pixels (24 px = 1 world unit). Players are cylinders r wide and height tall.
@@ -131,23 +167,59 @@ const rectHitsCircle = ([x, y, w, h], cx, cy, r) => {
 let curBroken = null;
 const wallOn = i => !curBroken || !curBroken.has(i);
 function setBroken(set) { curBroken = set; }
-const blocked = (x, y, r) => { for (let i = 0; i < MAP.walls.length; i++) if (wallOn(i) && rectHitsCircle(MAP.walls[i], x, y, r)) return true; return false; };
+// something solid at (x, y) for a body standing at height z: walls you're below the top of, railings when
+// you're up on a balcony. blocked() is the ground-level version.
+function blockedAt(x, y, r, z) {
+  for (let i = 0; i < MAP.walls.length; i++) if (wallOn(i) && z < wallTop(i) && rectHitsCircle(MAP.walls[i], x, y, r)) return true;
+  if (z >= UP.floor - 4) for (const rl of UP.rails) if (rectHitsCircle(rl, x, y, r)) return true;
+  return false;
+}
+const blocked = (x, y, r) => blockedAt(x, y, r, 0);
 // for grenades: vents (type 2) only block what's above vent height
-const gBlocked = (x, y, r, z) => { for (let i = 0; i < MAP.walls.length; i++) { const w = MAP.walls[i]; if (wallOn(i) && !(w[4] === 2 && z < P.ventH) && rectHitsCircle(w, x, y, r)) return true; } return false; };
-
-function lineOfSight(ax, ay, bx, by) {
-  const d = Math.hypot(bx - ax, by - ay), steps = Math.ceil(d / 6);
-  for (let i = 1; i < steps; i++) {
-    const t = i / steps;
-    if (blocked(ax + (bx - ax) * t, ay + (by - ay) * t, P.bulletR)) return false;
+const gBlocked = (x, y, r, z) => {
+  for (let i = 0; i < MAP.walls.length; i++) { const w = MAP.walls[i]; if (wallOn(i) && z < wallTop(i) && !(w[4] === 2 && z < P.ventH) && rectHitsCircle(w, x, y, r)) return true; }
+  if (z >= UP.floor && z < UP.floor + UP.rail) for (const rl of UP.rails) if (rectHitsCircle(rl, x, y, r)) return true;
+  return false;
+};
+// Is the straight 3D segment (x1,y1,z1)->(x2,y2,z2) clear? Walls block below their tops, railings block
+// between the balcony floor and the rail top, and balcony floors block anything passing up or down through them.
+function clear3(x1, y1, z1, x2, y2, z2) {
+  const dx = x2 - x1, dy = y2 - y1, dz = z2 - z1;
+  const span = (rx, ry, rw, rh) => {   // [t0, t1] of the segment inside the rectangle (2D), or null
+    let t0 = 0, t1 = 1;
+    for (const [p, q] of [[-dx, x1 - rx], [dx, rx + rw - x1], [-dy, y1 - ry], [dy, ry + rh - y1]]) {
+      if (p === 0) { if (q < 0) return null; }
+      else { const r = q / p; if (p < 0) { if (r > t1) return null; if (r > t0) t0 = r; } else { if (r < t0) return null; if (r < t1) t1 = r; } }
+    }
+    return t0 <= t1 ? [t0, t1] : null;
+  };
+  for (let i = 0; i < MAP.walls.length; i++) {
+    if (!wallOn(i)) continue;
+    const w = MAP.walls[i], sp = span(w[0], w[1], w[2], w[3]);
+    if (sp && Math.min(z1 + dz * sp[0], z1 + dz * sp[1]) < wallTop(i)) return false;
+  }
+  for (const rl of UP.rails) {
+    const sp = span(rl[0], rl[1], rl[2], rl[3]);
+    if (!sp) continue;
+    const za = z1 + dz * sp[0], zb = z1 + dz * sp[1];
+    if (Math.min(za, zb) < UP.floor + UP.rail && Math.max(za, zb) > UP.floor) return false;
+  }
+  if ((z1 - UP.floor) * (z2 - UP.floor) < 0) {   // passes through the balcony floor level
+    const t = (UP.floor - z1) / dz, px = x1 + dx * t, py = y1 + dy * t;
+    if (UP.slabs.some(sl => inRect(sl, px, py))) return false;
   }
   return true;
 }
 
+// can a point at height az see a point at height bz? (defaults: two standing players' eyes on the ground)
+function lineOfSight(ax, ay, bx, by, az = 33, bz = 33) { return clear3(ax, ay, az, bx, by, bz); }
+
 // Navigation grid for bots (16px cells, cells a player can't stand in are blocked)
 const CELL = 16, GW = MAP.w / CELL, GH = MAP.h / CELL;
-const navBlocked = Array.from({ length: GW * GH }, (_, i) =>
-  blocked((i % GW) * CELL + CELL / 2, Math.floor(i / GW) * CELL + CELL / 2, P.r + 2));
+const navBlocked = Array.from({ length: GW * GH }, (_, i) => {
+  const x = (i % GW) * CELL + CELL / 2, y = Math.floor(i / GW) * CELL + CELL / 2;
+  return blocked(x, y, P.r + 2) || UP.stairs.some(st => inRect([st[0] - 14, st[1] - 14, st[2] + 28, st[3] + 28], x, y));
+});
 const cellOf = (x, y) => Math.max(0, Math.min(GW - 1, Math.floor(x / CELL))) + Math.max(0, Math.min(GH - 1, Math.floor(y / CELL))) * GW;
 
 function findPath(fx, fy, tx, ty) {
@@ -218,7 +290,7 @@ function makePlayer(team, name, client, look) {
   return { id: nextId++, team, name, client, bot: !client, look: cleanLook(look), x: 0, y: 0, hp: P.hp, alive: true,
     input: { f: 0, s: 0, yaw: team === 'A' ? 0 : Math.PI, pitch: 0, run: false, crouch: false }, yaw: 0, pitch: 0, cool: 0, kills: 0, burst: 0, sinceShot: 99,
     stance: 'stand', running: false, slideT: 0, slideCd: 0, slideX: 0, slideY: 0, cd: { boom: 0, frag: 0, therm: 0 }, throws: [], respawnT: 0,
-    weapon: 'rifle', switchT: 0,
+    weapon: 'rifle', switchT: 0, z: 0, vz: 0,
     brain: { path: [], repath: 0, strafe: Math.random() < 0.5 ? 1 : -1, strafeT: 0,
       skill: 0.75 + Math.random() * 0.5, wobble: [0, 0], wobbleT: 0, seen: 0, react: 14 + Math.random() * 16 } };
 }
@@ -257,7 +329,7 @@ function resetRound(m) {
     const spots = defending ? MAP.defend : MAP.spawns[p.team];
     const [x, y, yaw] = spots[idx[p.team]++ % spots.length];   // attackers: home base facing a doorway; defenders: around the gem
     Object.assign(p, { x, y, hp: P.hp, alive: true, cool: 0, yaw, pitch: 0, burst: 0, sinceShot: 99,
-      stance: 'stand', running: false, slideT: 0, slideCd: 0, cd: { boom: 0, frag: 0, therm: 0 }, throws: [], switchT: 0, cool: 0 });
+      stance: 'stand', running: false, slideT: 0, slideCd: 0, cd: { boom: 0, frag: 0, therm: 0 }, throws: [], switchT: 0, cool: 0, z: 0, vz: 0, respawnT: 0 });
     p.input = { f: 0, s: 0, yaw, pitch: 0, run: false, crouch: false };
     p.brain.path = []; p.brain.repath = 0; p.brain.guard = null;
   }
@@ -299,7 +371,7 @@ function stepMovement(p, mx, my, run, crouch, runOk, canMove, ads = false) {
     } else p.stance = 'crouch';
   } else p.stance = 'stand';
   p.running = p.stance === 'stand' && run && runOk && len > 0;
-  if (!canMove) return;
+  if (!canMove) { settle(p); return; }
   let dx, dy, spd;
   if (p.stance === 'slide') {
     const k = p.slideT / P.slideTicks;               // slows down over the slide
@@ -310,10 +382,28 @@ function stepMovement(p, mx, my, run, crouch, runOk, canMove, ads = false) {
     spd = (p.running ? P.run : p.stance === 'crouch' ? P.crouchSpeed : P.walk) * (ads ? P.adsSpeed : 1);
     dx = mx / len; dy = my / len;
   }
-  const ox = p.x, oy = p.y;
-  if (!blocked(p.x + dx * spd, p.y, P.r)) p.x += dx * spd;
-  if (!blocked(p.x, p.y + dy * spd, P.r)) p.y += dy * spd;
+  const ox = p.x, oy = p.y, z = p.z || 0;
+  const ok = (x, y) => !blockedAt(x, y, P.r, z) && supportAt(x, y, z) <= z + 14;   // no wall, no step too high
+  if (ok(p.x + dx * spd, p.y)) p.x += dx * spd;
+  if (ok(p.x, p.y + dy * spd)) p.y += dy * spd;
   if (p.stance === 'slide' && p.x === ox && p.y === oy) p.slideT = Math.min(p.slideT, 1);   // slid into a wall
+  settle(p);
+}
+// stand on whatever is under you; if that's lower (walked off a balcony edge), fall
+function settle(p) {
+  const z = p.z || 0, sup = supportAt(p.x, p.y, z);
+  if (sup >= z - 2) { p.z = sup; p.vz = 0; return; }
+  p.vz = (p.vz || 0) - 0.6; p.z = z + p.vz;
+  if (p.z <= sup) { p.z = sup; p.vz = 0; }
+  unstick(p);
+}
+// after a drop you can land overlapping the wall under the balcony edge: nudge to the nearest clear spot
+function unstick(p) {
+  if (!blockedAt(p.x, p.y, P.r, p.z)) return;
+  for (let d = 2; d <= 32; d += 2) for (let a = 0; a < 16; a++) {
+    const x = p.x + Math.cos(a / 8 * Math.PI) * d, y = p.y + Math.sin(a / 8 * Math.PI) * d;
+    if (!blockedAt(x, y, P.r, p.z)) { p.x = x; p.y = y; return; }
+  }
 }
 
 // ---------- Aim (first person) ----------
@@ -380,13 +470,13 @@ function castRay(x, y, eye, yaw, pitch, cands, spread = P.lockR) {
     if (along <= 0 || (best && along >= best.along)) continue;
     const perp = Math.abs(rx * dy - ry * dx);
     if (perp > P.r + spread) continue;
-    const height = STANCES[c.stance || 'stand'].height, h = eye + along * tp;
+    const height = STANCES[c.stance || 'stand'].height, cz = c.z || 0, h = eye + along * tp - cz;   // h: height up their body
     if (h < -spread || h > height + Math.max(0, spread - P.lockR)) continue;
     if (h > height - P.headH && perp > P.headR + Math.max(0, spread - P.lockR)) continue;   // beside the head: a miss (it's narrower than the shoulders)
     // the shot path is clear from the shooter to where the ray meets their body (not centre to centre, so a
     // player half behind a corner can still be hit on the part you can see)
     const front = along - Math.sqrt(Math.max(0, P.r * P.r - perp * perp));
-    if (segmentClear(x, y, x + dx * front, y + dy * front)) best = { c, along, h: Math.min(h, height), head: h >= height - P.headH };
+    if (clear3(x, y, eye, x + dx * front, y + dy * front, eye + front * tp)) best = { c, along, h: cz + Math.min(h, height), head: h >= height - P.headH };
   }
   return best;
 }
@@ -404,7 +494,7 @@ function eyePos(x, y, yaw, lean) {
 function aimTarget(m, p) {
   const [ex, ey] = eyePos(p.x, p.y, p.yaw, p.lean || 0);
   const w = WEAPONS[p.weapon || 'rifle'];
-  const hit = castRay(ex, ey, STANCES[p.stance].eye, p.yaw, p.pitch, m.players.filter(o => o.alive && o.team !== p.team), w.spread);
+  const hit = castRay(ex, ey, (p.z || 0) + STANCES[p.stance].eye, p.yaw, p.pitch, m.players.filter(o => o.alive && o.team !== p.team), w.spread);
   return hit && hit.along <= w.range ? hit : null;   // the shotgun doesn't fire at targets out of its range
 }
 
@@ -465,10 +555,10 @@ function botThink(m, b) {
   // Aim wobble: bots aren't perfect
   if (--br.wobbleT <= 0) { br.wobble = [(Math.random() - 0.5) * 0.09 / br.skill, (Math.random() - 0.5) * 0.06 / br.skill]; br.wobbleT = 15 + Math.random() * 25; }
 
-  if (lineOfSight(b.x, b.y, t.x, t.y)) {
+  if (lineOfSight(b.x, b.y, t.x, t.y, (b.z || 0) + STANCES[b.stance].eye, (t.z || 0) + STANCES[t.stance].height * 0.6)) {
     br.path = []; br.seen++;   // reaction time: counts up while the target is in view
     inp.yaw = Math.atan2(dy, dx) + br.wobble[0];
-    inp.pitch = Math.atan2(STANCES[t.stance].height * 0.6 - STANCES[b.stance].eye, dist) + br.wobble[1];
+    inp.pitch = Math.atan2((t.z || 0) + STANCES[t.stance].height * 0.6 - (b.z || 0) - STANCES[b.stance].eye, dist) + br.wobble[1];
     // Strafe sideways, keep a comfortable distance
     if (--br.strafeT <= 0) { br.strafe *= -1; br.strafeT = 25 + Math.random() * 45; }
     let mx = -dy / dist * br.strafe, my = dx / dist * br.strafe;
@@ -528,10 +618,11 @@ function throwGrenade(m, p, kind) {
   p.cd[kind] = g.cd;
   const fx = Math.cos(p.yaw), fy = Math.sin(p.yaw);
   let x = p.x + fx * (P.r + 4), y = p.y + fy * (P.r + 4);
-  if (blocked(x, y, 3)) { x = p.x; y = p.y; }
-  const pr = { id: m.nextProj++, kind, owner: p.id, team: p.team, x, y, z: STANCES[p.stance].eye - 4, t: 0, yaw: p.yaw };
+  if (blockedAt(x, y, 3, (p.z || 0) + 20)) { x = p.x; y = p.y; }
+  const pz = p.z || 0;
+  const pr = { id: m.nextProj++, kind, owner: p.id, team: p.team, x, y, z: pz + STANCES[p.stance].eye - 4, t: 0, yaw: p.yaw };
   if (kind === 'boom') {
-    Object.assign(pr, { z: g.z, dir: p.yaw, back: false, vx: fx * g.speed, vy: fy * g.speed, vz: 0 });
+    Object.assign(pr, { z: pz + g.z, dir: p.yaw, back: false, vx: fx * g.speed, vy: fy * g.speed, vz: 0 });
   } else {
     const pit = clamp(p.pitch + g.lift, -0.6, 1.1), c = Math.cos(pit);
     Object.assign(pr, { vx: fx * c * g.speed, vy: fy * c * g.speed, vz: Math.sin(pit) * g.speed });
@@ -543,7 +634,8 @@ function throwGrenade(m, p, kind) {
 function touchingEnemy(m, pr, pad) {
   for (const o of m.players) {
     if (!o.alive || o.team === pr.team) continue;
-    if (Math.hypot(o.x - pr.x, o.y - pr.y) < P.r + pad && pr.z <= STANCES[o.stance].height + 2) return o;
+    const oz = o.z || 0;
+    if (Math.hypot(o.x - pr.x, o.y - pr.y) < P.r + pad && pr.z <= oz + STANCES[o.stance].height + 2 && pr.z >= oz - 4) return o;
   }
   return null;
 }
@@ -558,6 +650,7 @@ function damage(m, o, amount, owner, src, head, x, y, z) {
     if (owner) owner.kills++;
     m.events.push(['k', owner ? owner.id : 0, o.id, head ? 1 : 0, src]);
     if (m.practice) o.respawnT = 84;
+    if (m.mode === 'extraction' && o.team !== m.attack) o.respawnT = 600;   // defenders are back in 10 s
   }
 }
 
@@ -577,8 +670,8 @@ function explode(m, pr, radius, dmg, src) {
   const owner = m.players.find(o => o.id === pr.owner);
   for (const o of m.players) {
     if (!o.alive || o.team === pr.team) continue;
-    const d = Math.max(0, Math.hypot(o.x - pr.x, o.y - pr.y) - P.r);
-    if (d > radius || !lineOfSight(pr.x, pr.y, o.x, o.y)) continue;
+    const oz = (o.z || 0) + 20, d = Math.max(0, Math.hypot(o.x - pr.x, o.y - pr.y, oz - pr.z) - P.r);
+    if (d > radius || !clear3(pr.x, pr.y, pr.z + 2, o.x, o.y, oz)) continue;
     damage(m, o, Math.round(dmg * Math.max(0.3, 1 - d / radius)), owner, src, false, o.x, o.y, 20);
   }
 }
@@ -608,18 +701,22 @@ function stepThrown(m, pr) {
   let hitWall = false, nx = pr.x + pr.vx, ny = pr.y + pr.vy;
   if (gBlocked(nx, pr.y, 3, pr.z)) { pr.vx = -pr.vx * g.bounce; nx = pr.x; hitWall = true; }
   if (gBlocked(nx, ny, 3, pr.z)) { pr.vy = -pr.vy * g.bounce; ny = pr.y; hitWall = true; }
+  const z0 = pr.z;
   pr.x = nx; pr.y = ny; pr.z += pr.vz;
+  // the underside of a balcony: bounce back down
+  if (z0 < UP.floor && pr.z >= UP.floor - 1 && UP.slabs.some(sl => inRect(sl, pr.x, pr.y))) { pr.z = UP.floor - 2; pr.vz = -Math.abs(pr.vz) * 0.5; }
+  const ground = supportAt(pr.x, pr.y, z0);   // floor, stair or balcony under it
   let landed = false;
-  if (pr.z <= 0) {
+  if (pr.z <= ground) {
     landed = pr.vz < -0.6;
-    pr.z = 0; pr.vz = -pr.vz * g.ground; if (pr.vz < 1) pr.vz = 0;
+    pr.z = ground; pr.vz = -pr.vz * g.ground; if (pr.vz < 1) pr.vz = 0;
     pr.vx *= g.friction; pr.vy *= g.friction;
   }
   const enemy = touchingEnemy(m, pr, 4);
   if (pr.kind === 'frag') {
     if (enemy || pr.t >= g.fuse) { explode(m, pr, g.radius, g.dmg, DMG_SRC.frag); pr.dead = true; }
     else if ((hitWall || landed) && Math.hypot(pr.vx, pr.vy, pr.vz) > 1.2) m.events.push(['b', pr.id]);
-  } else if (enemy || hitWall || pr.z <= 0) { ignite(m, pr); pr.dead = true; }
+  } else if (enemy || hitWall || landed || pr.z <= ground) { ignite(m, pr); pr.dead = true; }
   if (pr.t > 600) pr.dead = true;
 }
 
@@ -627,7 +724,7 @@ function stepThrown(m, pr) {
 function ignite(m, pr) {
   const g = GREN.therm, px = -Math.sin(pr.yaw), py = Math.cos(pr.yaw);
   m.fires.push({ id: m.nextProj++, x1: pr.x - px * g.half, y1: pr.y - py * g.half, x2: pr.x + px * g.half, y2: pr.y + py * g.half,
-    t: g.burn, owner: pr.owner, team: pr.team });
+    z: supportAt(pr.x, pr.y, pr.z + 2), t: g.burn, owner: pr.owner, team: pr.team });
   m.events.push(['x', Math.round(pr.x), Math.round(pr.y), 0, DMG_SRC.therm, 26]);
 }
 function distToSegment(x, y, f) {
@@ -649,7 +746,7 @@ function stepGrenades(m) {
     if (f.t % g.every) continue;
     const owner = m.players.find(o => o.id === f.owner);
     for (const o of m.players) {
-      if (o.alive && o.team !== f.team && distToSegment(o.x, o.y, f) < g.width + P.r) damage(m, o, g.dmg, owner, DMG_SRC.therm, false, o.x, o.y, 8);
+      if (o.alive && o.team !== f.team && Math.abs((o.z || 0) - (f.z || 0)) < 30 && distToSegment(o.x, o.y, f) < g.width + P.r) damage(m, o, g.dmg, owner, DMG_SRC.therm, false, o.x, o.y, 8);
     }
   }
   m.fires = m.fires.filter(f => !f.dead);
@@ -657,8 +754,8 @@ function stepGrenades(m) {
 
 // Where would a grenade go? Runs the real grenade code in a sandbox with no enemies (so it shows the full
 // path) and returns { points: [[x, y, z], ...], end: [x, y, z], fire: [x1, y1, x2, y2] | null, back: bool }.
-function predictThrow(kind, x, y, stance, yaw, pitch) {
-  const me = { id: -1, team: 'P', x, y, stance, yaw, pitch, alive: true, bot: false, cd: { boom: 0, frag: 0, therm: 0 } };
+function predictThrow(kind, x, y, stance, yaw, pitch, z = 0) {
+  const me = { id: -1, team: 'P', x, y, z, stance, yaw, pitch, alive: true, bot: false, cd: { boom: 0, frag: 0, therm: 0 } };
   const m = { players: [me], projectiles: [], fires: [], events: [], nextProj: 1 };
   throwGrenade(m, me, kind);
   const pr = m.projectiles[0];
@@ -736,6 +833,18 @@ function handlePlay(client, msg) {
   }
 }
 
+// a far back corner of the defenders' own base (the one furthest from any attacker)
+function respawnDefender(m, p) {
+  const atk = m.players.filter(o => o.alive && o.team === m.attack);
+  const spots = MAP.respawn[p.team];
+  const far = spots.reduce((a, s) => (Math.min(...atk.map(o => Math.hypot(o.x - s[0], o.y - s[1])), 1e9) > Math.min(...atk.map(o => Math.hypot(o.x - a[0], o.y - a[1])), 1e9) ? s : a));
+  Object.assign(p, { x: far[0], y: far[1], yaw: far[2], pitch: 0, z: 0, vz: 0, hp: P.hp, alive: true, cool: 0, burst: 0, stance: 'stand',
+    running: false, slideT: 0, switchT: 0, respawnT: 0 });
+  p.input = Object.assign({}, p.input, { yaw: far[2], pitch: 0 });
+  p.brain.path = []; p.brain.repath = 0; p.brain.guard = null;
+  m.events.push(['rs', p.id]);
+}
+
 function endRound(m, winner, reason) {
   if (m.phase !== 'fight') return;
   if (winner) m.score[winner]++;
@@ -792,6 +901,7 @@ function stepMatch(m) {
   for (const p of m.players) {
     if (!p.alive) {
       if (m.practice && p.brain.dummy && --p.respawnT <= 0) placeDummy(m, p);
+      else if (m.mode === 'extraction' && p.team !== m.attack && m.phase === 'fight' && p.respawnT > 0 && --p.respawnT <= 0) respawnDefender(m, p);
       continue;
     }
     let mx, my, run, crouch, runOk, wants = [];
@@ -827,7 +937,7 @@ function stepMatch(m) {
     const tgt = m.phase === 'fight' && ready ? aimTarget(m, p) : null;
     // no enemy under the crosshair? a green panel close enough counts as a target too (shoot it down)
     let pan = null;
-    if (!tgt && m.phase === 'fight' && ready && !p.bot && m.panelHp) {
+    if (!tgt && m.phase === 'fight' && ready && !p.bot && m.panelHp && (p.z || 0) < 10) {
       const [ex2, ey2] = eyePos(p.x, p.y, p.yaw, p.lean || 0);
       pan = panelUnder(ex2, ey2, STANCES[p.stance].eye, p.yaw, p.pitch);
     }
@@ -850,7 +960,7 @@ function stepMatch(m) {
       const o = hit.c, d = hit.along;
       const [ox, oy] = eyePos(p.x, p.y, p.yaw, p.lean || 0);
       const ex = Math.round(ox + Math.cos(p.yaw) * d), ey = Math.round(oy + Math.sin(p.yaw) * d);
-      const ez = Math.round(clamp(hit.h, 2, STANCES[o.stance].height));
+      const ez = Math.round(clamp(hit.h, (o.z || 0) + 2, (o.z || 0) + STANCES[o.stance].height));
       m.events.push(['s', p.id, p.burst, ex, ey, ez, W.code]);
       damage(m, o, weaponDamage(wn, d, hit.head), p, wn === 'shotgun' ? DMG_SRC.shotgun : DMG_SRC.gun, hit.head, ex, ey, ez);
       // Players apply this same kick on their own computer when they get the 's' event
@@ -861,7 +971,9 @@ function stepMatch(m) {
   stepGrenades(m);
 
   if (m.phase === 'fight' && m.mode === 'extraction') stepExtraction(m);
-  if (m.phase === 'fight' && !m.practice) {
+  if (m.phase === 'fight' && m.mode === 'extraction') {
+    if (!m.players.some(p => p.team === m.attack && p.alive)) endRound(m, m.attack === 'A' ? 'B' : 'A', 'wiped');
+  } else if (m.phase === 'fight' && !m.practice) {
     const aliveA = m.players.some(p => p.team === 'A' && p.alive), aliveB = m.players.some(p => p.team === 'B' && p.alive);
     if (!aliveA || !aliveB) endRound(m, aliveA ? 'A' : aliveB ? 'B' : null, 'wiped');
   }
@@ -875,9 +987,9 @@ function stepMatch(m) {
       ex: g ? { attack: m.attack, gem: [{ home: 0, carried: 1, dropped: 2 }[g.state], Math.round(g.x), Math.round(g.y), g.carrier, Math.round(g.prog / EXTRACT.extractTicks * 100)],
         time: Math.max(0, Math.ceil(m.timeLeft / 60)) } : null,
       players: m.players.map(p => [p.id, r1(p.x), r1(p.y), p.hp, p.alive ? 1 : 0, r3(p.yaw), r3(p.pitch), p.kills,
-        STANCE_CODE[p.stance] + (p.running ? 4 : 0) + (p.ads ? 8 : 0) + (p.lean < 0 ? 16 : p.lean > 0 ? 32 : 0), Math.ceil(p.cd.boom / 6), Math.ceil(p.cd.frag / 6), Math.ceil(p.cd.therm / 6), WEAPONS[p.weapon || 'rifle'].code + (p.switchT > 0 ? 2 : 0)]),
+        STANCE_CODE[p.stance] + (p.running ? 4 : 0) + (p.ads ? 8 : 0) + (p.lean < 0 ? 16 : p.lean > 0 ? 32 : 0), Math.ceil(p.cd.boom / 6), Math.ceil(p.cd.frag / 6), Math.ceil(p.cd.therm / 6), WEAPONS[p.weapon || 'rifle'].code + (p.switchT > 0 ? 2 : 0), r1(p.z || 0), p.alive ? 0 : Math.ceil((p.respawnT || 0) / 60)]),
       proj: m.projectiles.map(pr => [pr.id, KIND_CODE[pr.kind], r1(pr.x), r1(pr.y), r1(pr.z), pr.team]),
-      fires: m.fires.map(f => [f.id, Math.round(f.x1), Math.round(f.y1), Math.round(f.x2), Math.round(f.y2), f.t, f.team]),
+      fires: m.fires.map(f => [f.id, Math.round(f.x1), Math.round(f.y1), Math.round(f.x2), Math.round(f.y2), f.t, f.team, Math.round(f.z || 0)]),
       ev: m.events };
     m.events = [];
     for (const p of m.players) if (p.client) send(p.client, state);
@@ -928,5 +1040,5 @@ function start(opts = {}) {
   runClock(tick);
 }
 
-return { connect, start, tick, matchmake, createPractice, MAP, P, LOOK_SIZES, STANCES, KINDS, recoilKick, blocked, lineOfSight, stepMovement, castRay, predictThrow, segmentClear, eyePos, setBroken, panelUnder, EXTRACT, MODES, _matches: matches, WEAPONS, WEAPON_BY_CODE, weaponDamage, weaponKick, get botFillMs() { return BOT_FILL_MS; } };
+return { connect, start, tick, matchmake, createPractice, MAP, P, LOOK_SIZES, STANCES, KINDS, recoilKick, blocked, lineOfSight, stepMovement, castRay, predictThrow, segmentClear, eyePos, setBroken, panelUnder, EXTRACT, MODES, clear3, supportAt, blockedAt, _matches: matches, WEAPONS, WEAPON_BY_CODE, weaponDamage, weaponKick, get botFillMs() { return BOT_FILL_MS; } };
 });
