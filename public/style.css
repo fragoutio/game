@@ -150,6 +150,18 @@ table.board td.k { text-align: right; }
 .aim-hint { position: absolute; bottom: calc(max(16px, env(safe-area-inset-bottom, 0px)) + 74px); left: 50%; transform: translateX(-50%);
   font-size: 13px; color: var(--muted); background: rgba(6,8,24,0.6); padding: 5px 12px; white-space: nowrap; }
 
+/* weapon slots (above the grenades): 1 rifle, 2 shotgun with its pump bar */
+.weapons { position: absolute; right: max(16px, env(safe-area-inset-right, 0px)); bottom: calc(max(16px, env(safe-area-inset-bottom, 0px)) + 66px);
+  display: flex; gap: 8px; }
+.weapons .w { position: relative; width: 120px; padding: 5px 10px 7px; background: var(--panel); border: 2px solid var(--panel-edge);
+  display: flex; align-items: center; gap: 8px; transform: skewX(-8deg); opacity: 0.6; }
+.weapons .w > * { transform: skewX(8deg); }
+.weapons .w span { font-family: var(--font-display); font-size: 18px; letter-spacing: 1.5px; }
+.weapons .w.active { opacity: 1; border-color: var(--cyan); box-shadow: 0 0 10px rgba(63, 224, 255, 0.35); }
+.weapons .w .pump { position: absolute; left: 8px; right: 8px; bottom: 3px; height: 3px; background: #1b2150; }
+.weapons .w .pump > i { display: block; height: 100%; width: 100%; background: var(--cyan); }
+@media (max-width: 640px) { .weapons .w { width: 96px; } .weapons .w span { font-size: 14px; } }
+
 /* grenade slots (bottom right): grey with seconds left while cooling down */
 .gren { position: absolute; right: max(16px, env(safe-area-inset-right, 0px)); bottom: max(16px, env(safe-area-inset-bottom, 0px));
   display: flex; gap: 8px; }

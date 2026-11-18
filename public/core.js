@@ -61,6 +61,32 @@ const P = {
 // you have to aim up a little (more the closer they are) to land a headshot.
 const STANCES = { stand: { eye: 33, height: 42 }, crouch: { eye: 21, height: 29 }, slide: { eye: 14, height: 22 } };
 const STANCE_CODE = { stand: 0, crouch: 1, slide: 2 };
+
+// Weapons. Key 1 = rifle, key 2 = shotgun. Both auto-fire when the crosshair is on an enemy.
+// Damage is in hp (5 health = 100 hp, so 20 hp = 1 health).
+const WEAPONS = {
+  // rifle: 1 health per body hit, 3 per headshot, steady fire, recoil pattern from recoilKick()
+  rifle: { code: 0, cooldown: 7, body: 20, head: 60, spread: 2, range: Infinity },
+  // shotgun: up close (within `close` px) 3 health to the body, 4 to the head; damage falls off to
+  // `minFactor` by `far`, and it won't fire beyond `range`. Wide spread (forgiving aim), pumps between
+  // shots, one big kick per shot.
+  shotgun: { code: 1, cooldown: 54, body: 60, head: 80, spread: 7, close: 60, far: 220, minFactor: 0.25, range: 260,
+    kick: 0.075, kickYaw: 0.02 },
+};
+const WEAPON_BY_CODE = ['rifle', 'shotgun'];
+const SWITCH_TICKS = 24;   // 0.4 s to bring the other weapon up (no firing meanwhile)
+// damage a weapon does at a distance (px)
+function weaponDamage(w, along, head) {
+  const g = WEAPONS[w];
+  let k = 1;
+  if (g.close != null && along > g.close) k = Math.max(g.minFactor, 1 - (along - g.close) / (g.far - g.close) * (1 - g.minFactor));
+  return Math.round((head ? g.head : g.body) * k);
+}
+// recoil for a shot: the rifle's learnable pattern, or the shotgun's single big kick
+function weaponKick(w, n) {
+  if (w === 'shotgun') return { pitch: WEAPONS.shotgun.kick, yaw: (Math.random() * 2 - 1) * WEAPONS.shotgun.kickYaw };
+  return recoilKick(n);
+}
 const ROUNDS_TO_WIN = 3;
 // Grenade tuning (px, ticks at 60 Hz). cd = cooldown after a throw.
 const GREN = {
@@ -161,6 +187,7 @@ function makePlayer(team, name, client, look) {
   return { id: nextId++, team, name, client, bot: !client, look: cleanLook(look), x: 0, y: 0, hp: P.hp, alive: true,
     input: { f: 0, s: 0, yaw: team === 'A' ? 0 : Math.PI, pitch: 0, run: false, crouch: false }, yaw: 0, pitch: 0, cool: 0, kills: 0, burst: 0, sinceShot: 99,
     stance: 'stand', running: false, slideT: 0, slideCd: 0, slideX: 0, slideY: 0, cd: { boom: 0, frag: 0, therm: 0 }, throws: [], respawnT: 0,
+    weapon: 'rifle', switchT: 0,
     brain: { path: [], repath: 0, strafe: Math.random() < 0.5 ? 1 : -1, strafeT: 0,
       skill: 0.75 + Math.random() * 0.5, wobble: [0, 0], wobbleT: 0, seen: 0, react: 14 + Math.random() * 16 } };
 }
@@ -190,7 +217,7 @@ function resetRound(m) {
   for (const p of m.players) {
     const [x, y, yaw] = MAP.spawns[p.team][idx[p.team]++];   // facing the spawn room's doorway
     Object.assign(p, { x, y, hp: P.hp, alive: true, cool: 0, yaw, pitch: 0, burst: 0, sinceShot: 99,
-      stance: 'stand', running: false, slideT: 0, slideCd: 0, cd: { boom: 0, frag: 0, therm: 0 }, throws: [] });
+      stance: 'stand', running: false, slideT: 0, slideCd: 0, cd: { boom: 0, frag: 0, therm: 0 }, throws: [], switchT: 0, cool: 0 });
     p.input = { f: 0, s: 0, yaw, pitch: 0, run: false, crouch: false };
     p.brain.path = []; p.brain.repath = 0;
   }
@@ -280,21 +307,21 @@ function segmentClear(x1, y1, x2, y2) {
 // What's under the crosshair: the view ray from the shooter's eye along yaw/pitch passes through a body
 // (a cylinder r wide and as tall as their stance) with nothing blocking the view. The top headH px is the head.
 // cands: [{ x, y, stance }]. Returns { c, along, h, head } for the nearest, or null.
-function castRay(x, y, eye, yaw, pitch, cands) {
+function castRay(x, y, eye, yaw, pitch, cands, spread = P.lockR) {
   const dx = Math.cos(yaw), dy = Math.sin(yaw), tp = Math.tan(pitch);
   let best = null;
   for (const c of cands) {
     const rx = c.x - x, ry = c.y - y, along = rx * dx + ry * dy;
     if (along <= 0 || (best && along >= best.along)) continue;
     const perp = Math.abs(rx * dy - ry * dx);
-    if (perp > P.r + P.lockR) continue;
+    if (perp > P.r + spread) continue;
     const height = STANCES[c.stance || 'stand'].height, h = eye + along * tp;
-    if (h < -P.lockR || h > height) continue;
-    if (h > height - P.headH && perp > P.headR) continue;   // beside the head: a miss (it's narrower than the shoulders)
+    if (h < -spread || h > height + Math.max(0, spread - P.lockR)) continue;
+    if (h > height - P.headH && perp > P.headR + Math.max(0, spread - P.lockR)) continue;   // beside the head: a miss (it's narrower than the shoulders)
     // the shot path is clear from the shooter to where the ray meets their body (not centre to centre, so a
     // player half behind a corner can still be hit on the part you can see)
     const front = along - Math.sqrt(Math.max(0, P.r * P.r - perp * perp));
-    if (segmentClear(x, y, x + dx * front, y + dy * front)) best = { c, along, h, head: h >= height - P.headH };
+    if (segmentClear(x, y, x + dx * front, y + dy * front)) best = { c, along, h: Math.min(h, height), head: h >= height - P.headH };
   }
   return best;
 }
@@ -311,7 +338,9 @@ function eyePos(x, y, yaw, lean) {
 }
 function aimTarget(m, p) {
   const [ex, ey] = eyePos(p.x, p.y, p.yaw, p.lean || 0);
-  return castRay(ex, ey, STANCES[p.stance].eye, p.yaw, p.pitch, m.players.filter(o => o.alive && o.team !== p.team));
+  const w = WEAPONS[p.weapon || 'rifle'];
+  const hit = castRay(ex, ey, STANCES[p.stance].eye, p.yaw, p.pitch, m.players.filter(o => o.alive && o.team !== p.team), w.spread);
+  return hit && hit.along <= w.range ? hit : null;   // the shotgun doesn't fire at targets out of its range
 }
 
 // Bot: turns toward a target view at a limited speed, so it has to fight recoil like a player
@@ -340,6 +369,8 @@ function botThink(m, b) {
     let mx = -dy / dist * br.strafe, my = dx / dist * br.strafe;
     if (dist < 120) { mx -= dx / dist; my -= dy / dist; } else if (dist > 300) { mx += dx / dist; my += dy / dist; }
     inp.mx = mx; inp.my = my;
+    if (b.weapon !== 'shotgun' && dist < 100) inp.weapon = 'shotgun';
+    else if (b.weapon === 'shotgun' && dist > 170) inp.weapon = 'rifle';
     // grenades: often an opener while they line up their first shot, sometimes mid-fight
     if (br.seen > 6) {
       const r = Math.random() / br.skill, opener = br.seen < br.react + 10;
@@ -372,7 +403,7 @@ function botThink(m, b) {
 const KINDS = ['boom', 'frag', 'therm'];
 const KIND_CODE = { boom: 0, frag: 1, therm: 2 };
 // src codes for damage/knockout events: 0 gun, 1 boomerang, 2 frag, 3 fire
-const DMG_SRC = { gun: 0, boom: 1, frag: 2, therm: 3 };
+const DMG_SRC = { gun: 0, boom: 1, frag: 2, therm: 3, shotgun: 4 };
 
 // pitch that lands a frag/thermite about `dist` px away on open floor (bots use this to aim lobs)
 function lobPitch(kind, dist, eye) {
@@ -580,12 +611,18 @@ function handlePlay(client, msg) {
     const pitch = Number.isFinite(+msg.pitch) ? clamp(+msg.pitch, -P.pitchMax, P.pitchMax) : p.input.pitch;
     if (msg.t === 'input') {
       const ads = !!msg.ads, lean = ads ? Math.max(-1, Math.min(1, Math.round(+msg.lean || 0))) : 0;
-      p.input = { f: c(msg.f), s: c(msg.s), yaw, pitch, run: !!msg.run, crouch: !!msg.crouch, ads, lean };
+      p.input = { f: c(msg.f), s: c(msg.s), yaw, pitch, run: !!msg.run, crouch: !!msg.crouch, ads, lean,
+        weapon: WEAPONS[msg.weapon] ? msg.weapon : p.input.weapon || p.weapon };
       // where the player's own computer has them (it moves instantly); used if it's close to ours
       if (Number.isFinite(+msg.x) && Number.isFinite(+msg.y)) p.claim = [+msg.x, +msg.y];
     }
     else if (KIND_CODE[msg.g] != null && p.throws.length < 3) { p.input.yaw = yaw; p.input.pitch = pitch; p.throws.push(msg.g); }   // queued, so two quick throws both happen
   }
+}
+
+function switchWeapon(p, w) {
+  if (!WEAPONS[w] || w === p.weapon) return;
+  p.weapon = w; p.switchT = SWITCH_TICKS; p.burst = 0; p.onT = 0;
 }
 
 function stepMatch(m) {
@@ -607,6 +644,7 @@ function stepMatch(m) {
     if (p.bot) {
       const inp = p.brain.dummy ? dummyThink(m, p) : botThink(m, p);
       mx = inp.mx; my = inp.my; run = !!inp.run; crouch = !!inp.crouch; runOk = true; if (inp.throw) wants = [inp.throw];
+      if (inp.weapon) switchWeapon(p, inp.weapon);
       if (!p.brain.dummy) botAim(p, inp.yaw, inp.pitch);
     } else {
       // forward/strafe relative to where the player is looking
@@ -615,6 +653,7 @@ function stepMatch(m) {
       mx = c * i.f - s * i.s; my = s * i.f + c * i.s;
       run = i.run; crouch = i.crouch; runOk = i.f > 0.3;
       p.ads = !!i.ads && p.stance === 'crouch'; p.lean = p.ads ? i.lean || 0 : 0;   // aim only while crouched
+      if (i.weapon) switchWeapon(p, i.weapon);
       wants = p.throws.splice(0);
     }
     stepMovement(p, mx, my, run, crouch, runOk, m.phase !== 'countdown', !!p.ads);
@@ -633,17 +672,19 @@ function stepMatch(m) {
     const ready = (!p.bot || (!p.brain.dummy && p.brain.seen > p.brain.react)) && !p.running;   // bots react after a moment; dummies never shoot; nobody fires while running
     const tgt = m.phase === 'fight' && ready ? aimTarget(m, p) : null;
     p.onT = tgt ? (p.onT || 0) + 1 : 0;                       // how long the crosshair has been on someone
-    const hit = tgt && p.cool <= 0 && (p.bot || p.onT > P.fireDelay) ? tgt : null;
+    if (p.switchT > 0) p.switchT--;
+    const hit = tgt && p.cool <= 0 && p.switchT <= 0 && (p.bot || p.onT > P.fireDelay) ? tgt : null;
     if (hit) {
-      p.cool = P.cooldown; p.sinceShot = 0;
+      const wn = p.weapon || 'rifle', W = WEAPONS[wn];
+      p.cool = W.cooldown; p.sinceShot = 0;
       const o = hit.c, d = hit.along;
       const [ox, oy] = eyePos(p.x, p.y, p.yaw, p.lean || 0);
       const ex = Math.round(ox + Math.cos(p.yaw) * d), ey = Math.round(oy + Math.sin(p.yaw) * d);
       const ez = Math.round(clamp(hit.h, 2, STANCES[o.stance].height));
-      m.events.push(['s', p.id, p.burst, ex, ey, ez]);
-      damage(m, o, hit.head ? P.headDmg : P.dmg, p, DMG_SRC.gun, hit.head, ex, ey, ez);
+      m.events.push(['s', p.id, p.burst, ex, ey, ez, W.code]);
+      damage(m, o, weaponDamage(wn, d, hit.head), p, wn === 'shotgun' ? DMG_SRC.shotgun : DMG_SRC.gun, hit.head, ex, ey, ez);
       // Players apply this same kick on their own computer when they get the 's' event
-      if (p.bot) { const k = recoilKick(p.burst); p.pitch = Math.min(P.pitchMax, p.pitch + k.pitch); p.yaw = wrapAngle(p.yaw + k.yaw); }
+      if (p.bot) { const k = weaponKick(wn, p.burst); p.pitch = Math.min(P.pitchMax, p.pitch + k.pitch); p.yaw = wrapAngle(p.yaw + k.yaw); }
       p.burst++;
     }
   }
@@ -661,7 +702,7 @@ function stepMatch(m) {
     const r1 = v => Math.round(v * 10) / 10, r3 = v => Math.round(v * 1000) / 1000;
     const state = { t: 'state', tick: m.tick, phase: m.phase, phaseT: m.phaseT, round: m.round, score: m.score, roundWinner: m.roundWinner,
       players: m.players.map(p => [p.id, r1(p.x), r1(p.y), p.hp, p.alive ? 1 : 0, r3(p.yaw), r3(p.pitch), p.kills,
-        STANCE_CODE[p.stance] + (p.running ? 4 : 0) + (p.ads ? 8 : 0) + (p.lean < 0 ? 16 : p.lean > 0 ? 32 : 0), Math.ceil(p.cd.boom / 6), Math.ceil(p.cd.frag / 6), Math.ceil(p.cd.therm / 6)]),
+        STANCE_CODE[p.stance] + (p.running ? 4 : 0) + (p.ads ? 8 : 0) + (p.lean < 0 ? 16 : p.lean > 0 ? 32 : 0), Math.ceil(p.cd.boom / 6), Math.ceil(p.cd.frag / 6), Math.ceil(p.cd.therm / 6), WEAPONS[p.weapon || 'rifle'].code + (p.switchT > 0 ? 2 : 0)]),
       proj: m.projectiles.map(pr => [pr.id, KIND_CODE[pr.kind], r1(pr.x), r1(pr.y), r1(pr.z), pr.team]),
       fires: m.fires.map(f => [f.id, Math.round(f.x1), Math.round(f.y1), Math.round(f.x2), Math.round(f.y2), f.t, f.team]),
       ev: m.events };
@@ -714,5 +755,5 @@ function start(opts = {}) {
   runClock(tick);
 }
 
-return { connect, start, tick, matchmake, createPractice, MAP, P, LOOK_SIZES, STANCES, KINDS, recoilKick, blocked, lineOfSight, stepMovement, castRay, predictThrow, segmentClear, eyePos, get botFillMs() { return BOT_FILL_MS; } };
+return { connect, start, tick, matchmake, createPractice, MAP, P, LOOK_SIZES, STANCES, KINDS, recoilKick, blocked, lineOfSight, stepMovement, castRay, predictThrow, segmentClear, eyePos, WEAPONS, WEAPON_BY_CODE, weaponDamage, weaponKick, get botFillMs() { return BOT_FILL_MS; } };
 });

@@ -78,6 +78,7 @@
       <dt><kbd>↑</kbd><kbd>↓</kbd></dt><dd>Look up / down</dd>
       <dt><kbd>W</kbd> <kbd>W</kbd></dt><dd>Double-tap W and keep holding it to run. Let go of W to stop. You can't shoot while running.</dd>
       <dt><kbd>Shift</kbd> or <kbd>C</kbd></dt><dd>While running: slide. Otherwise: crouch (hold). Crouching makes you a smaller target.</dd>
+      <dt><kbd>1</kbd> / <kbd>2</kbd></dt><dd>Rifle / shotgun. The shotgun hits hard up close (3 health to the body, 4 to the head) but loses damage with distance, won't fire at long range, and pumps between shots.</dd>
       <dt><kbd>Q</kbd> / <kbd>E</kbd> while crouched</dt><dd>Aim down the sight (1.3× zoom): steadier recoil, finer turning. Only works while crouched; stand up and you zoom back out.</dd>
       <dt><kbd>Q</kbd> / <kbd>E</kbd> while aiming</dt><dd>Lean left / right to shoot around corners. Tap the same key again to straighten up.</dd>
       <dt><kbd>Space</kbd></dt><dd>Lower the sight (standing up lowers it too).</dd>
@@ -152,7 +153,11 @@
     <div class="stance" id="me-stance"></div>
     <div class="recoil"><div id="me-recoil"></div></div>
   </div>
-  <div class="aim-hint" id="aim-hint"><kbd>W</kbd><kbd>S</kbd> walk · <kbd>A</kbd><kbd>D</kbd> strafe · <kbd>←</kbd><kbd>→</kbd> turn · <kbd>↑</kbd><kbd>↓</kbd> look · double-tap <kbd>W</kbd> run · <kbd>Shift</kbd>/<kbd>C</kbd> crouch/slide · crouch + <kbd>Q</kbd>/<kbd>E</kbd> aim, then lean · <kbd>Space</kbd> lower · hold <kbd>R</kbd><kbd>G</kbd><kbd>F</kbd> grenades</div>
+  <div class="aim-hint" id="aim-hint"><kbd>W</kbd><kbd>S</kbd> walk · <kbd>A</kbd><kbd>D</kbd> strafe · <kbd>←</kbd><kbd>→</kbd> turn · <kbd>↑</kbd><kbd>↓</kbd> look · double-tap <kbd>W</kbd> run · <kbd>Shift</kbd>/<kbd>C</kbd> crouch/slide · crouch + <kbd>Q</kbd>/<kbd>E</kbd> aim, then lean · <kbd>Space</kbd> lower · <kbd>1</kbd><kbd>2</kbd> weapons · hold <kbd>R</kbd><kbd>G</kbd><kbd>F</kbd> grenades</div>
+  <div class="weapons" id="weapons">
+    <div class="w active" data-w="rifle"><kbd>1</kbd><span>RIFLE</span></div>
+    <div class="w" data-w="shotgun"><kbd>2</kbd><span>SHOTGUN</span><i class="pump"><i></i></i></div>
+  </div>
   <div class="gren" id="gren">
     <div class="g" data-g="boom"><kbd>R</kbd><span>BOOMERANG</span><b class="cd"></b></div>
     <div class="g" data-g="frag"><kbd>G</kbd><span>FRAG</span><b class="cd"></b></div>

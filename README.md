@@ -61,6 +61,7 @@ Everything also works with a mouse or a gamepad (D-pad + A/B).
 | ↑ / ↓ | Look up / down |
 | W, W | Double-tap W and keep holding to run (like Minecraft); let go of W to stop. You can't shoot while running |
 | Shift or C | While running: slide (fast, low, slows into a crouch). Otherwise: crouch (hold) |
+| 1 / 2 | Rifle / shotgun (0.4 s to switch) |
 | Q / E (while crouched) | Aim down the sight (1.3x zoom, round holo sight): 25% less recoil, finer turning. Only while crouched: stand up and you zoom back out |
 | Q / E while aiming | Lean left / right (tap again to straighten up): your eye and gun shift 11 px to the side, stopping short of walls |
 | Space | Lower the sight (standing up also lowers it) |
@@ -96,6 +97,16 @@ Tuning lives in the `P` object near the top of `public/core.js` (`recoilPitch`, 
 - Tracers and particles are instanced (one draw call each); the first-person gun is a tiny second pass
 - Render resolution scales with the GRAPHICS setting; if a match runs under 35 FPS for 3 seconds the game
   drops one quality level by itself
+
+## Weapons
+
+| Key | Weapon | Damage (5 health = 100 hp) | Fire |
+|---|---|---|---|
+| 1 | Rifle | 1 health body, 3 head, any range | fast (every 7 ticks), climbing recoil pattern |
+| 2 | Shotgun | up close (≤ 60 px): 3 health body, 4 head; falls to a quarter by 220 px; won't fire beyond 260 px | pump (every 54 ticks), wide spread, one big kick per shot |
+
+Both auto-fire. Tuning is the `WEAPONS` table in `public/core.js`. Bots switch to the shotgun when you're
+close (under 100 px) and back to the rifle at range (over 170 px). The kill feed shows ⁂ for shotgun knockouts.
 
 ## Grenades
 

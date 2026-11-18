@@ -109,11 +109,19 @@
 
     // ---- blaster ----
     const gun = pivot(-0.06, 1.2, 0.36);
-    add(box(0.11, 0.13, 0.4), mats.gun, 0, 0, 0, gun);
-    add(box(0.07, 0.14, 0.08), mats.gun, 0, -0.12, -0.08, gun);                          // grip
-    add(box(0.115, 0.03, 0.28), mats.team, 0, 0.045, 0.02, gun);                          // glow strip
-    const barrel = add(cyl(0.035, 0.035, 0.2, 6), mats.frame, 0, 0.01, 0.28, gun);
+    const rifle = pivot(0, 0, 0, gun), shotgun = pivot(0, 0, 0, gun);
+    add(box(0.11, 0.13, 0.4), mats.gun, 0, 0, 0, rifle);
+    add(box(0.07, 0.14, 0.08), mats.gun, 0, -0.12, -0.08, rifle);                        // grip
+    add(box(0.115, 0.03, 0.28), mats.team, 0, 0.045, 0.02, rifle);                        // glow strip
+    const barrel = add(cyl(0.035, 0.035, 0.2, 6), mats.frame, 0, 0.01, 0.28, rifle);
     barrel.rotation.x = Math.PI / 2;
+    // shotgun: chunky receiver, long fat barrel, pump grip, team-coloured stripe
+    add(box(0.12, 0.14, 0.3), mats.gun, 0, 0, -0.06, shotgun);
+    add(box(0.07, 0.14, 0.08), mats.gun, 0, -0.12, -0.12, shotgun);
+    const sgBarrel = add(cyl(0.05, 0.05, 0.42, 7), mats.frame, 0, 0.03, 0.22, shotgun); sgBarrel.rotation.x = Math.PI / 2;
+    const pump = add(cyl(0.06, 0.06, 0.14, 7), mats.gun, 0, -0.04, 0.2, shotgun); pump.rotation.x = Math.PI / 2;
+    add(box(0.125, 0.03, 0.2), mats.team, 0, 0.065, -0.04, shotgun);
+    shotgun.visible = false;
     const muzzle = pivot(0, 0.01, 0.4, gun);
     const flash = new THREE.Mesh(G('flash', () => new THREE.OctahedronGeometry(0.13, 0)),
       new THREE.MeshBasicMaterial({ color: 0xfff1a8 }));
@@ -155,6 +163,7 @@
 
     return {
       root: rootG, body, legs, arms, gun, head, flash, mats, flashMats,
+      setWeapon(w) { rifle.visible = w !== 'shotgun'; shotgun.visible = w === 'shotgun'; },
       phase: Math.random() * 6, recoil: 0, flashT: 0, hitT: 0, deadT: 0,
       dispose() { for (const k in mats) mats[k].dispose(); rootG.traverse(o => { if (o.material && !Object.values(mats).includes(o.material)) o.material.dispose(); }); },
     };

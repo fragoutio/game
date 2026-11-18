@@ -160,11 +160,19 @@
     const glow = basic(teamHex);
     const add = (geo, mat, x, y, z, parent) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); parent.add(m); return m; };
     const gun = new THREE.Group(); vm.group.add(gun);
-    add(new THREE.BoxGeometry(0.09, 0.11, 0.42), gunMat, 0, 0, -0.08, gun);
-    add(new THREE.BoxGeometry(0.095, 0.025, 0.3), glow, 0, 0.045, -0.06, gun);
-    add(new THREE.BoxGeometry(0.06, 0.13, 0.07), gunMat, 0, -0.1, 0.06, gun);                    // grip
-    add(new THREE.BoxGeometry(0.05, 0.04, 0.12), dark, 0, 0.08, -0.02, gun);                     // sight
-    const barrel = add(new THREE.CylinderGeometry(0.028, 0.028, 0.2, 6), dark, 0, 0.005, -0.36, gun); barrel.rotation.x = Math.PI / 2;
+    const rifle = new THREE.Group(), shotgun = new THREE.Group(); gun.add(rifle, shotgun);
+    add(new THREE.BoxGeometry(0.09, 0.11, 0.42), gunMat, 0, 0, -0.08, rifle);
+    add(new THREE.BoxGeometry(0.095, 0.025, 0.3), glow, 0, 0.045, -0.06, rifle);
+    add(new THREE.BoxGeometry(0.06, 0.13, 0.07), gunMat, 0, -0.1, 0.06, rifle);                    // grip
+    add(new THREE.BoxGeometry(0.05, 0.04, 0.12), dark, 0, 0.08, -0.02, rifle);                     // sight
+    const barrel = add(new THREE.CylinderGeometry(0.028, 0.028, 0.2, 6), dark, 0, 0.005, -0.36, rifle); barrel.rotation.x = Math.PI / 2;
+    // shotgun: wide receiver, fat barrel, pump that slides back after each shot
+    add(new THREE.BoxGeometry(0.11, 0.12, 0.3), gunMat, 0, 0, -0.02, shotgun);
+    add(new THREE.BoxGeometry(0.06, 0.13, 0.07), gunMat, 0, -0.1, 0.06, shotgun);
+    add(new THREE.BoxGeometry(0.115, 0.025, 0.24), glow, 0, 0.05, -0.02, shotgun);
+    const sgBarrel = add(new THREE.CylinderGeometry(0.042, 0.042, 0.36, 7), dark, 0, 0.02, -0.33, shotgun); sgBarrel.rotation.x = Math.PI / 2;
+    vm.pump = add(new THREE.CylinderGeometry(0.05, 0.05, 0.13, 7), gunMat, 0, -0.035, -0.3, shotgun); vm.pump.rotation.x = Math.PI / 2;
+    vm.guns = { rifle, shotgun };
     // right hand + sleeve on the grip, left hand under the barrel
     add(new THREE.IcosahedronGeometry(0.05, 0), glove, 0.01, -0.12, 0.07, gun);
     const sleeveR = add(new THREE.CapsuleGeometry(0.06, 0.32, 1, 6), jacket, 0.06, -0.2, 0.28, gun); sleeveR.rotation.x = 1.15;
@@ -266,6 +274,8 @@
     move: () => tone(620, 0.035, 'square', 0.025),
     select: () => tone(760, 0.08, 'square', 0.035, 500),
     back: () => tone(380, 0.08, 'square', 0.03, -150),
+    shotgun: mine => { if (mine) { noise(0.22, 0.16, 1800); tone(140, 0.2, 'sawtooth', 0.06, -70); } else { noise(0.18, 0.05, 1400); } },
+    swap: () => { tone(500, 0.04, 'square', 0.02); tone(700, 0.05, 'square', 0.02, 0, 0.12); },
     shoot: mine => { if (mine) { tone(820, 0.05, 'square', 0.035, -450); noise(0.05, 0.04, 3000); } else tone(520, 0.05, 'square', 0.012, -300); },
     hitmark: () => tone(1400, 0.04, 'square', 0.03),
     throw: () => { noise(0.14, 0.05, 2600); tone(320, 0.12, 'triangle', 0.02, 260); },
@@ -426,6 +436,8 @@
       else if (GREN_KEYS[e.code] && !e.repeat) startAim(GREN_KEYS[e.code]);
       else if ((e.code === 'KeyQ' || e.code === 'KeyE') && !e.repeat) sightKey(e.code === 'KeyQ' ? -1 : 1);
       else if (e.code === 'Space') lowerSight();
+      else if (e.code === 'Digit1' || e.code === 'Numpad1') pickWeapon('rifle');
+      else if (e.code === 'Digit2' || e.code === 'Numpad2') pickWeapon('shotgun');
       return;
     }
     const act = KEYMAP[e.code];
@@ -547,6 +559,7 @@
     for (const t of ['a', 'b']) { const el = $('pips-' + t); el.innerHTML = ''; for (let i = 0; i < msg.roundsToWin; i++) el.appendChild(document.createElement('i')).className = 'pip'; }
     const hp = $('me-hp'); hp.innerHTML = ''; for (let i = 0; i < Math.round(msg.cfg.hp / msg.cfg.dmg); i++) hp.appendChild(document.createElement('i'));
     myCd = { boom: 0, frag: 0, therm: 0 };
+    me.weapon = 'rifle'; me.switchUntil = 0; updateWeaponHud();   // every match starts on the rifle
     show(msg.practice ? 'practice' : 'game');
   }
 
@@ -554,7 +567,7 @@
     const feed = $('feed'), row = document.createElement('div');
     const k = document.createElement('span'); k.className = killer.team === 'A' ? 'a' : 'b'; k.textContent = killer.name;
     const v = document.createElement('span'); v.className = victim.team === 'A' ? 'a' : 'b'; v.textContent = victim.name;
-    row.append(k, head ? ' ◎ ' : [' ▸ ', ' ↺ ', ' ✹ ', ' ♨ '][src] || ' ▸ ', v); feed.prepend(row);
+    row.append(k, head ? ' ◎ ' : [' ▸ ', ' ↺ ', ' ✹ ', ' ♨ ', ' ⁂ '][src] || ' ▸ ', v); feed.prepend(row);
     while (feed.childElementCount > 5) feed.lastChild.remove();
     setTimeout(() => row.remove(), 5000);
   }
@@ -589,7 +602,7 @@
     return a.ch.flash.parent.getWorldPosition(out);
   }
 
-  const vFrom = new THREE.Vector3(), vTo = new THREE.Vector3();
+  const vFrom = new THREE.Vector3(), vTo = new THREE.Vector3(), tmpV2 = new THREE.Vector3(), tmpV3 = new THREE.Vector3();
   function onState(msg) {
     const now = performance.now();
     if (curAt) interval = interval * 0.9 + Math.min(100, now - curAt) * 0.1;
@@ -600,6 +613,8 @@
       lastRound = msg.round;
       me.yaw = row[5]; me.pitch = 0; me.x = row[1]; me.y = row[2]; me.bursts = 0;
       Object.assign(me, { stance: 'stand', running: false, slideT: 0, slideCd: 0, acc: 0, ads: false, lean: 0 });
+      if (!me.weapon) me.weapon = 'rifle';
+      updateWeaponHud();
     }
     if (row) me.alive = !!row[4];
 
@@ -618,13 +633,19 @@
         const a = actors.get(ev[1]);
         if (mine) {
           // recoil: the same kick the server uses for bots, applied to your view
-          const k = Core.recoilKick(ev[2]);
+          const k = Core.weaponKick(WEAPON_NAMES[ev[6] || 0], ev[2]);
+          if (ev[6] === 1) vm.pumpT = 0.75;   // rack the pump
           const steady = me.ads ? 0.75 : 1;   // aiming down the sight is steadier
           me.pitch = Math.min(CP.pitchMax, me.pitch + k.pitch * steady); me.yaw += k.yaw * steady;
           vm.kick = 1; vm.flashT = 0.05; me.burstT = now; me.bursts = ev[2] + 1;
         } else if (a) { a.ch.recoil = 1; a.ch.flashT = 0.05; }
-        addTracer(muzzleOf(ev[1], vFrom), vTo, a ? TEAM[a.info.team].tracer : 0xffffff);
-        sfx.shoot(mine);
+        const col = a ? TEAM[a.info.team].tracer : 0xffffff;
+        muzzleOf(ev[1], vFrom);
+        if (ev[6] === 1) {   // shotgun: a fan of pellet tracers around the aim point
+          const d = vFrom.distanceTo(vTo);
+          for (let i = 0; i < 6; i++) addTracer(vFrom, tmpV2.copy(vTo).add(tmpV3.set((Math.random() - 0.5), (Math.random() - 0.5) * 0.7, (Math.random() - 0.5)).multiplyScalar(0.06 * d)), col);
+          sfx.shotgun(mine);
+        } else { addTracer(vFrom, vTo, col); sfx.shoot(mine); }
       } else if (ev[0] === 'h') {
         const a = actors.get(ev[1]); if (!a) continue;
         a.ch.hitT = 1;
@@ -642,7 +663,7 @@
         }
         burst(v.x, 1, v.z, TEAM[v.info.team].hex, 24, 3.5);
         burst(v.x, 1, v.z, 0xffffff, 8, 3);
-        if (ev[1] === match.you) { announce(ev[3] ? 'HEADSHOT!' : ['KNOCKOUT!', 'BOOMERANG KO!', 'FRAGGED!', 'TORCHED!'][ev[4] || 0], v.info.name, 'var(--yellow)', 800); flashClass($('hitmark'), 'kill', 300); }
+        if (ev[1] === match.you) { announce(ev[3] ? 'HEADSHOT!' : ['KNOCKOUT!', 'BOOMERANG KO!', 'FRAGGED!', 'TORCHED!', 'SHOTGUNNED!'][ev[4] || 0], v.info.name, 'var(--yellow)', 800); flashClass($('hitmark'), 'kill', 300); }
         if (ev[2] === match.you) announce('KNOCKED OUT', 'spectating until the next round', 'var(--team-b)', 1600);
       }
     }
@@ -728,7 +749,7 @@
   function sendInput(now) {
     if (now - lastInput < 33) return;
     lastInput = now;
-    sendPlay({ t: 'input', f: lastMove.f, s: lastMove.s, run: lastMove.run, crouch: lastMove.crouch, ads: !!me.ads, lean: me.lean || 0, x: Math.round(me.x * 10) / 10, y: Math.round(me.y * 10) / 10, yaw: Math.round(me.yaw * 1000) / 1000, pitch: Math.round(me.pitch * 1000) / 1000 });
+    sendPlay({ t: 'input', weapon: me.weapon || 'rifle', f: lastMove.f, s: lastMove.s, run: lastMove.run, crouch: lastMove.crouch, ads: !!me.ads, lean: me.lean || 0, x: Math.round(me.x * 10) / 10, y: Math.round(me.y * 10) / 10, yaw: Math.round(me.yaw * 1000) / 1000, pitch: Math.round(me.pitch * 1000) / 1000 });
   }
 
   // what's under the centre crosshair? Same test as the server (core.castRay): body height depends on
@@ -736,9 +757,11 @@
   function rayHit(cands) {
     if (me.running) return null;
     const [eyeX, eyeY] = Core.eyePos(me.x, me.y, me.yaw, me.lean || 0);
+    const W = Core.WEAPONS[me.weapon || 'rifle'];
+    if (performance.now() < (me.switchUntil || 0)) return null;
     const hit = Core.castRay(eyeX, eyeY, Core.STANCES[me.stance].eye, me.yaw, me.pitch,
-      cands.map(c => ({ x: c.sx, y: c.sy, stance: c.stance || 'stand', ref: c })));
-    return hit ? { c: hit.c.ref, along: hit.along, h: hit.h, head: hit.head } : null;
+      cands.map(c => ({ x: c.sx, y: c.sy, stance: c.stance || 'stand', ref: c })), W.spread);
+    return hit && hit.along <= W.range ? { c: hit.c.ref, along: hit.along, h: hit.h, head: hit.head } : null;
   }
   function onTargetNow() {
     if (!curState || !me.alive) return false;
@@ -933,6 +956,18 @@
     projMeshes.clear(); fires.clear(); blasts.length = 0;
   }
 
+  // ---------- Weapons: 1 rifle, 2 shotgun ----------
+  const WEAPON_NAMES = Core.WEAPON_BY_CODE;
+  function pickWeapon(w) {
+    if (!me.alive || me.weapon === w) return;
+    me.weapon = w; me.switchUntil = performance.now() + 400; me.bursts = 0; me.armSince = 0;
+    vm.switchT = 0.4; sfx.swap();
+    updateWeaponHud();
+  }
+  function updateWeaponHud() {
+    for (const el of document.querySelectorAll('#weapons .w')) el.classList.toggle('active', el.dataset.w === me.weapon);
+  }
+
   // ---------- Aiming down the sight + leaning ----------
   // While crouched, tap Q or E: raise the sight (1.3x zoom, HOG-style ring sight). While aiming, Q leans left
   // and E leans right (tap the same key again to straighten up). Space lowers the sight; standing up does too.
@@ -984,7 +1019,12 @@
     scope.style.transform = `rotate(${(-me.roll).toFixed(3)}rad)`;
     ret.style.visibility = me.ads ? 'hidden' : '';
     if (now - me.burstT > 380) me.bursts = 0;
-    ret.style.setProperty('--spread', `${(me.running ? 14 : 7) + Math.min(10, me.bursts * 1.6)}px`);
+    const base = me.weapon === 'shotgun' ? 16 : 7;
+    ret.style.setProperty('--spread', `${(me.running ? 14 : base) + Math.min(10, me.bursts * 1.6)}px`);
+    // shotgun pump: the slot's bar refills between shots
+    const pumpLeft = Math.max(0, (vm.pumpT || 0) / 0.75);
+    const bar = document.querySelector('#weapons [data-w="shotgun"] .pump > i');
+    if (bar) bar.style.width = `${(1 - pumpLeft) * 100}%`;
     $('me-fire').classList.toggle('on', onTarget);
     $('me-recoil').style.width = `${Math.min(1, me.bursts / 7) * 100}%`;
     const lean = me.lean < 0 ? ' · LEANING LEFT' : me.lean > 0 ? ' · LEANING RIGHT' : '';
@@ -1001,6 +1041,11 @@
     vm.ads = (vm.ads || 0) + ((me.ads ? 1 : 0) - (vm.ads || 0)) * Math.min(1, dt * 14);
     const a = vm.ads, sw = sway * (1 - a * 0.7);
     vm.group.position.set((0.17 + sw + vm.run * 0.04) * (1 - a), (-0.17 - Math.abs(sw) * 0.6 - vm.run * 0.08) * (1 - a) - 0.105 * a, -0.5 + vm.kick * 0.05 * (1 - a * 0.5) + 0.06 * a);
+    if (vm.guns) { vm.guns.rifle.visible = me.weapon !== 'shotgun'; vm.guns.shotgun.visible = me.weapon === 'shotgun'; }
+    vm.switchT = Math.max(0, (vm.switchT || 0) - dt);
+    vm.group.position.y -= Math.sin(Math.min(1, vm.switchT / 0.4) * Math.PI) * 0.18;
+    vm.pumpT = Math.max(0, (vm.pumpT || 0) - dt);
+    if (vm.pump) vm.pump.position.z = -0.3 + Math.sin(Math.min(1, vm.pumpT / 0.75) * Math.PI) * 0.09;
     vm.throwT = Math.max(0, (vm.throwT || 0) - dt);
     const th = Math.sin(Math.min(1, (0.35 - vm.throwT) / 0.35) * Math.PI) * (vm.throwT > 0 ? 1 : 0);
     vm.group.position.y -= th * 0.12;
@@ -1036,6 +1081,8 @@
       act.sx = q[1] + (p[1] - q[1]) * a; act.sy = q[2] + (p[2] - q[2]) * a; act.alive = !!p[4];
       act.stance = ['stand', 'crouch', 'slide'][p[8] & 3] || 'stand';
       act.lean = p[8] & 16 ? -1 : p[8] & 32 ? 1 : 0;
+      const w = (p[12] || 0) & 1 ? 'shotgun' : 'rifle';
+      if (act.weapon !== w) { act.weapon = w; act.ch.setWeapon(w); }
       if (p[0] === match.you) {
         // keep the prediction honest: ease toward the server when idle, snap if far off
         const err = Math.hypot(act.sx - me.x, act.sy - me.y);
