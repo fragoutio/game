@@ -29,11 +29,12 @@
   catch (e) { $('loading').textContent = 'THIS COMPUTER COULD NOT START 3D GRAPHICS (WEBGL)'; return; }
   renderer.autoClear = false;
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x070a1f);
-  scene.fog = new THREE.Fog(0x070a1f, 30, 75);
+  // grey concrete arena under an overcast night sky
+  scene.background = new THREE.Color(0x17191e);
+  scene.fog = new THREE.Fog(0x17191e, 40, 120);
   const camera = new THREE.PerspectiveCamera(50, 1, 0.05, 200);
   camera.rotation.order = 'YXZ';
-  scene.add(new THREE.HemisphereLight(0xc4d8ff, 0x231a40, 0.9));
+  scene.add(new THREE.HemisphereLight(0xe8eaee, 0x3a3c42, 0.95));
   const sun = new THREE.DirectionalLight(0xffffff, 0.75);
   sun.position.set(-8, 20, 12); scene.add(sun);
 
@@ -77,9 +78,9 @@
 
   function buildArena() {
     const g = new THREE.Group();
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(160, 160), lam(0x0b0e26));
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(160, 160), lam(0x202227));
     ground.rotation.x = -Math.PI / 2; ground.position.set(CENTER.x, -0.02, CENTER.z); g.add(ground);
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(AW, AH), lam(0x151b42));
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(AW, AH), lam(0x3b3e45));
     floor.rotation.x = -Math.PI / 2; floor.position.set(CENTER.x, 0, CENTER.z); g.add(floor);
 
     // neon floor grid (one draw call)
@@ -87,24 +88,38 @@
     for (let x = step; x < AW; x += step) pts.push(x, 0.01, 0, x, 0.01, AH);
     for (let z = step; z < AH; z += step) pts.push(0, 0.01, z, AW, 0.01, z);
     const gridGeo = new THREE.BufferGeometry(); gridGeo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
-    g.add(new THREE.LineSegments(gridGeo, new THREE.LineBasicMaterial({ color: 0x2a3a8a, transparent: true, opacity: 0.55 })));
+    g.add(new THREE.LineSegments(gridGeo, new THREE.LineBasicMaterial({ color: 0x52565e, transparent: true, opacity: 0.5 })));
 
     for (const t of ['A', 'B']) for (const [x, y] of MAP.spawns[t]) {
       const pad = new THREE.Mesh(new THREE.RingGeometry(0.7, 0.95, 6), basic(TEAM[t].hex, { transparent: true, opacity: 0.35, depthWrite: false }));
       pad.rotation.x = -Math.PI / 2; pad.position.set(x * S, 0.012, y * S); g.add(pad);
     }
 
-    // walls: tall border with neon bands, crates with glowing edges and a stripe at waist level
-    const edgeA = new THREE.LineBasicMaterial({ color: 0x3fe0ff }), edgeB = new THREE.LineBasicMaterial({ color: 0xff3d7f });
-    const wallMat = lam(0x26306b), crateMat = lam(0x2f3b82), capMat = lam(0x4656a8);
-    const bandA = basic(0x3fe0ff), bandB = basic(0xff3d7f);
+    // grey concrete: room walls with a pale trim along the top, crates with a darker edge, low vents with grates
+    const edgeA = new THREE.LineBasicMaterial({ color: 0x9aa0a8 }), edgeB = new THREE.LineBasicMaterial({ color: 0x5d6168 });
+    const wallMat = lam(0x62666e), crateMat = lam(0x777b83), capMat = lam(0x8d9199);
+    const bandA = basic(0xa7adb5), bandB = basic(0x8c9199);
+    const VH = CP.ventH * S, ventDark = lam(0x0e0f12), ventBars = [];
     MAP.walls.forEach(([x, y, w, h, tall], i) => {
+      if (tall === 2) {   // vent: wall above a low grated gap
+        const up = new THREE.Mesh(new THREE.BoxGeometry(w * S, BORDER_H - VH, h * S), wallMat);
+        up.position.set((x + w / 2) * S, VH + (BORDER_H - VH) / 2, (y + h / 2) * S); g.add(up);
+        const top = new THREE.Mesh(new THREE.BoxGeometry(w * S + 0.02, 0.08, h * S + 0.02), bandA);
+        top.position.set(up.position.x, BORDER_H - 0.1, up.position.z); g.add(top);
+        const hole = new THREE.Mesh(new THREE.BoxGeometry(w * S * 0.98, VH, h * S * 0.98), ventDark);
+        hole.position.set(up.position.x, VH / 2, up.position.z); g.add(hole);
+        const along = w > h, len = (along ? w : h) * S, n = 6;
+        for (let k = 1; k < n; k++) ventBars.push([(along ? x * S + len * k / n : (x + w / 2) * S), (along ? (y + h / 2) * S : y * S + len * k / n), along]);
+        const frame = new THREE.Mesh(new THREE.BoxGeometry(w * S + 0.03, 0.05, h * S + 0.03), bandB);
+        frame.position.set(up.position.x, VH, up.position.z); g.add(frame);
+        return;
+      }
       const border = i < 4 || tall === 1, H = border ? BORDER_H : CRATE_H;
       const geo = new THREE.BoxGeometry(w * S, H, h * S);
       const m = new THREE.Mesh(geo, border ? wallMat : crateMat);
       m.position.set((x + w / 2) * S, H / 2, (y + h / 2) * S); g.add(m);
       if (border) {
-        for (const yy of [0.35, H - 0.1]) {
+        for (const yy of [H - 0.1]) {
           const band = new THREE.Mesh(new THREE.BoxGeometry(w * S + 0.02, 0.08, h * S + 0.02), i % 2 ? bandA : bandB);
           band.position.set(m.position.x, yy, m.position.z); g.add(band);
         }
@@ -118,8 +133,16 @@
       }
     });
 
+    // vent grate bars: one instanced mesh for every vent (cheap on school computers)
+    if (ventBars.length) {
+      const bars = new THREE.InstancedMesh(new THREE.BoxGeometry(0.05, VH, 1), lam(0x9aa0a8), ventBars.length);
+      const d = new THREE.Object3D();
+      ventBars.forEach(([bx, bz, along], k) => { d.position.set(bx, VH / 2, bz); d.rotation.set(0, along ? 0 : Math.PI / 2, 0); d.scale.set(1, 1, 32 * S + 0.04); d.updateMatrix(); bars.setMatrixAt(k, d.matrix); });
+      g.add(bars);
+    }
+
     for (const [x, z] of [[-1.5, -1.5], [AW + 1.5, -1.5], [-1.5, AH + 1.5], [AW + 1.5, AH + 1.5]]) {
-      const tower = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.8, 9, 6), lam(0x1d2556));
+      const tower = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.8, 9, 6), lam(0x3a3d44));
       tower.position.set(x, 4.5, z); g.add(tower);
       const top = new THREE.Mesh(new THREE.CylinderGeometry(0.66, 0.66, 0.3, 6), basic(z < 0 ? 0xff3d7f : 0x3fe0ff));
       top.position.set(x, 9.1, z); g.add(top);
@@ -127,8 +150,8 @@
     // big signs above the walls on both long sides, readable from inside the room
     const tex = makeSignTexture();
     for (const [x, z, ry] of [[CENTER.x, -1.6, 0], [CENTER.x, AH + 1.6, Math.PI]]) {
-      const sign = new THREE.Mesh(new THREE.PlaneGeometry(14, 3.5), basic(0xffffff, { map: tex, transparent: true, depthWrite: false }));
-      sign.position.set(x, 5.6, z); sign.rotation.y = ry; g.add(sign);
+      const sign = new THREE.Mesh(new THREE.PlaneGeometry(26, 6.5), basic(0xffffff, { map: tex, transparent: true, depthWrite: false }));
+      sign.position.set(x, 7.2, z); sign.rotation.y = ry; g.add(sign);
     }
     scene.add(g);
   }
@@ -138,7 +161,7 @@
   const SHOW = new THREE.Vector3(CENTER.x, 0, AH + 3.4);
   const pedestal = new THREE.Group();
   {
-    const base = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.35, 0.3, 10), lam(0x222b63)); base.position.y = 0.15;
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.35, 0.3, 10), lam(0x4a4d55)); base.position.y = 0.15;
     const rim = new THREE.Mesh(new THREE.TorusGeometry(1.22, 0.04, 4, 20), basic(0x3fe0ff)); rim.rotation.x = Math.PI / 2; rim.position.y = 0.3;
     pedestal.add(base, rim); pedestal.position.copy(SHOW); scene.add(pedestal);
   }
@@ -1143,9 +1166,11 @@
     if (now - mmAt < 90) return; mmAt = now;
     const k = mm.width / MAP.w;
     mctx.clearRect(0, 0, mm.width, mm.height);
-    mctx.fillStyle = 'rgba(9,12,34,0.8)'; mctx.fillRect(0, 0, mm.width, mm.height);
-    mctx.fillStyle = '#3c4b8a';
-    for (const [x, y, w, h] of MAP.walls) mctx.fillRect(x * k, y * k, Math.max(1, w * k), Math.max(1, h * k));
+    mctx.fillStyle = 'rgba(20,22,27,0.85)'; mctx.fillRect(0, 0, mm.width, mm.height);
+    for (const [x, y, w, h, t] of MAP.walls) {   // vents in amber so you can spot grenade routes
+      mctx.fillStyle = t === 2 ? '#d9a441' : '#8a8f98';
+      mctx.fillRect(x * k, y * k, Math.max(1, w * k), Math.max(1, h * k));
+    }
     if (match) for (const [id, a] of actors) {
       if (id === match.you || a.info.team !== match.myTeam || !a.alive) continue;
       mctx.fillStyle = a.info.team === 'A' ? '#3fa9ff' : '#ff4566';

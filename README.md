@@ -125,10 +125,14 @@ table in `public/core.js`. The kill feed marks the cause: ▸ gun, ◎ headshot,
 
 ## Map
 
-A cramped layout: each team spawns in a walled room with two doorways; short walls in front of every doorway
-mean neither spawn room can see into the other (checked: zero sightlines), so nobody can shoot from spawn.
-The middle is split into smaller rooms by tall walls, with crates for cover. Walls with a 5th value `1` in
-`MAP.walls` are full-height room walls. Spawns face their room's doorway.
+1280 × 960 px (4× the area of the first map), grey concrete. Each team spawns in a walled room with two
+offset doorways and short walls in front of them, so neither spawn room can see into the other (checked:
+zero sightlines). The middle is a set of small rooms and corridors with crates for cover.
+
+**Vents** (amber on the minimap) are low grated gaps at the bottom of some walls. A grenade below vent height
+(`ventH`, 14 px — rolling or bouncing low) passes under to the other side; anything higher hits the wall above.
+Players, bullets and sight can't get through. Wall entries in `MAP.walls` are `[x, y, w, h, type]`:
+type 1 = room wall, 2 = vent, otherwise a crate.
 
 ## Movement and headshots
 

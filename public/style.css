@@ -227,7 +227,7 @@ table.board td.k { text-align: right; }
   background: radial-gradient(ellipse at center, transparent 45%, rgba(255, 30, 60, 0.55) 100%); }
 #vignette.on { opacity: 1; transition: none; }
 #minimap { position: absolute; left: max(16px, env(safe-area-inset-left, 0px)); top: max(16px, env(safe-area-inset-top, 0px));
-  width: 160px; height: 120px; border: 2px solid var(--panel-edge); image-rendering: pixelated; }
+  width: 200px; height: 150px; border: 2px solid var(--panel-edge); image-rendering: pixelated; }
 
 #announce { position: fixed; left: 0; right: 0; top: 34%; z-index: 12; text-align: center; pointer-events: none;
   font-family: var(--font-display); font-size: clamp(54px, 10vw, 120px); letter-spacing: 6px; line-height: 1; }

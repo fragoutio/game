@@ -11,33 +11,36 @@ let log = () => {};
 
 // ---------- Arena ----------
 const MAP = {
-  w: 640, h: 480,
-  // [x, y, w, h, tall] — tall (1) = full-height room wall, otherwise a crate (both block shots and sight)
+  w: 1280, h: 960,
+  // [x, y, w, h, type] — type 1 = full-height room wall, 2 = vent (a low grated gap at the bottom of a wall:
+  // grenades low enough roll/bounce under it; players, bullets and sight can't pass), otherwise a crate.
+  // Layout: walled spawn rooms on the left (blue) and right (red), each with two offset doorways and short
+  // walls in front of them (no spawn room can see into the other); a middle of small rooms and corridors.
+  // Generated and checked (paths, zero spawn-room sightlines) by a layout script.
   walls: [
-    // outer border
-    [0, 0, 640, 16], [0, 464, 640, 16], [0, 0, 16, 480], [624, 0, 16, 480],
-    // blue spawn room (left): wall at x 144-160, doorways at y 96-150 and 330-384
-    [144, 16, 16, 80, 1], [144, 150, 16, 180, 1], [144, 384, 16, 80, 1],
-    // red spawn room (right): wall at x 480-496, doorways at y 150-204 and 276-330 (offset from blue's)
-    [480, 16, 16, 134, 1], [480, 204, 16, 72, 1], [480, 330, 16, 134, 1],
-    // short walls in front of each doorway, so doorways never look straight at each other
-    [200, 84, 16, 80, 1], [200, 316, 16, 80, 1], [424, 138, 16, 80, 1], [424, 262, 16, 80, 1],
-    // middle: walls that split it into smaller rooms
-    [272, 16, 16, 96, 1], [352, 368, 16, 96, 1], [256, 232, 128, 16, 1],
-    // cover
-    [304, 150, 32, 24], [304, 306, 32, 24], [236, 196, 24, 24], [380, 260, 24, 24],
-    [62, 222, 34, 36], [544, 222, 34, 36],
+    [0, 0, 1280, 32], [0, 928, 1280, 32], [0, 0, 32, 960], [1248, 0, 32, 960], [288, 32, 32, 160, 1],
+    [288, 300, 32, 360, 1], [288, 768, 32, 160, 1], [960, 32, 32, 268, 1], [960, 408, 32, 144, 1],
+    [960, 660, 32, 268, 1], [400, 168, 32, 64, 1], [400, 232, 32, 32, 2], [400, 264, 32, 64, 1],
+    [400, 632, 32, 160, 1], [848, 276, 32, 160, 1], [848, 524, 32, 64, 1], [848, 588, 32, 32, 2],
+    [848, 620, 32, 64, 1], [544, 32, 32, 88, 1], [544, 120, 32, 32, 2], [544, 152, 32, 72, 1],
+    [704, 736, 32, 72, 1], [704, 808, 32, 32, 2], [704, 840, 32, 88, 1], [512, 464, 112, 32, 1],
+    [624, 464, 32, 32, 2], [656, 464, 112, 32, 1], [592, 192, 72, 32, 1], [664, 192, 32, 32, 2],
+    [696, 192, 72, 32, 1], [736, 96, 32, 96, 1], [512, 736, 72, 32, 1], [584, 736, 32, 32, 2],
+    [616, 736, 72, 32, 1], [512, 768, 32, 96, 1], [432, 352, 96, 32, 1], [752, 576, 96, 32, 1],
+    [608, 300, 64, 48], [608, 612, 64, 48], [468, 400, 44, 44], [768, 516, 44, 44], [124, 444, 68, 72],
+    [1088, 444, 68, 72], [640, 112, 48, 48], [592, 820, 48, 48], [352, 470, 40, 40], [888, 450, 40, 40],
+    [1040, 200, 56, 40], [184, 720, 56, 40], [1040, 760, 56, 40], [184, 160, 56, 40],
   ],
-  // spawns sit in the corners of each spawn room, facing its nearest doorway: [x, y, yaw].
-  // No spawn can see into the other team's room.
-  spawns: { A: [[60, 56, 0.64], [60, 424, -0.64]], B: [[580, 424, -2.26], [580, 56, 2.26]] },
+  // [x, y, yaw]: spawns in the corners of each spawn room, facing its nearest doorway
+  spawns: {"A":[[120, 112, 0.64], [120, 848, -0.64]], "B":[[1160, 848, -2.26], [1160, 112, 2.26]]},
 };
 
 const P = {
   // sizes in arena pixels (24 px = 1 world unit). Players are cylinders r wide and height tall.
   r: 12, height: 42, eye: 38, hp: 100, cooldown: 7, bulletR: 3, dmg: 20,
   // Headshots: a hit in the top headH pixels of a body takes 3 of 5 health (body hits take 1 of 5)
-  headH: 7, headR: 6, headDmg: 60,   // the head is narrower than the body (headR vs r) and only the top headH px
+  headH: 7, headR: 6, headDmg: 60,
+  ventH: 14,   // vents are this tall (px): grenades below this height pass under   // the head is narrower than the body (headR vs r) and only the top headH px
   // Movement speeds (px per tick). Shift runs (forward only, can't shoot while running).
   // Ctrl/C: slide if you were running, otherwise crouch. Slides start fast and slow down to a crouch.
   walk: 2.4, run: 3.8, crouchSpeed: 1.25, slideSpeed: 6, slideTicks: 36, slideCooldown: 45,
@@ -103,6 +106,8 @@ const rectHitsCircle = ([x, y, w, h], cx, cy, r) => {
   return (cx - nx) ** 2 + (cy - ny) ** 2 < r * r;
 };
 const blocked = (x, y, r) => MAP.walls.some(w => rectHitsCircle(w, x, y, r));
+// for grenades: vents (type 2) only block what's above vent height
+const gBlocked = (x, y, r, z) => MAP.walls.some(w => !(w[4] === 2 && z < P.ventH) && rectHitsCircle(w, x, y, r));
 
 function lineOfSight(ax, ay, bx, by) {
   const d = Math.hypot(bx - ax, by - ay), steps = Math.ceil(d / 6);
@@ -475,7 +480,7 @@ function stepBoomerang(m, pr, owner) {
   else pr.dir += clamp(wrapAngle(Math.atan2(owner.y - pr.y, owner.x - pr.x) - pr.dir), -0.22, 0.22);   // homes back
   pr.vx = Math.cos(pr.dir) * g.speed; pr.vy = Math.sin(pr.dir) * g.speed;
   const nx = pr.x + pr.vx, ny = pr.y + pr.vy;
-  if (blocked(nx, ny, 3)) { pr.back = true; pr.dir += Math.PI; return; }   // bounce off walls and head home
+  if (gBlocked(nx, ny, 3, pr.z)) { pr.back = true; pr.dir += Math.PI; return; }   // bounce off walls and head home
   pr.x = nx; pr.y = ny;
   if (touchingEnemy(m, pr, 6)) {
     explode(m, pr, g.radius, g.dmg, DMG_SRC.boom);
@@ -490,8 +495,8 @@ function stepThrown(m, pr) {
   const g = GREN[pr.kind];
   pr.vz -= GREN.gravity;
   let hitWall = false, nx = pr.x + pr.vx, ny = pr.y + pr.vy;
-  if (blocked(nx, pr.y, 3)) { pr.vx = -pr.vx * g.bounce; nx = pr.x; hitWall = true; }
-  if (blocked(nx, ny, 3)) { pr.vy = -pr.vy * g.bounce; ny = pr.y; hitWall = true; }
+  if (gBlocked(nx, pr.y, 3, pr.z)) { pr.vx = -pr.vx * g.bounce; nx = pr.x; hitWall = true; }
+  if (gBlocked(nx, ny, 3, pr.z)) { pr.vy = -pr.vy * g.bounce; ny = pr.y; hitWall = true; }
   pr.x = nx; pr.y = ny; pr.z += pr.vz;
   let landed = false;
   if (pr.z <= 0) {
@@ -565,7 +570,7 @@ function placeDummy(m, d) {
   const me = m.players[0];
   let x = 400, y = 240;
   for (let i = 0; i < 80; i++) {
-    x = 170 + Math.random() * 440; y = 30 + Math.random() * 420;
+    x = 340 + Math.random() * (MAP.w - 380); y = 40 + Math.random() * (MAP.h - 80);   // anywhere outside blue's spawn room
     if (!blocked(x, y, P.r + 8) && Math.hypot(x - me.x, y - me.y) > 150 && m.players.every(o => o === d || o === me || Math.hypot(o.x - x, o.y - y) > 60)) break;
   }
   Object.assign(d, { x, y, hp: P.hp, alive: true, stance: 'stand', running: false, slideT: 0 });
