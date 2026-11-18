@@ -19,7 +19,7 @@ const index = pub('index.html');
 const ui = index.slice(index.indexOf('<!--UI-START-->') + 15, index.indexOf('<!--UI-END-->'));
 const FONTS = '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Chakra+Petch:wght@400;600;700&display=swap">';
 const scripts = threeTag => `${threeTag}
-<script>window.FRAGOUT_LOCAL = true; window.FRAGOUT_BOT_FILL_MS = 30000;</script>
+<script>window.FRAGOUT_LOCAL = true; window.FRAGOUT_BOT_FILL_MS = 30000; window.FRAGOUT_HIDE_BADGE = ${target === 'pages'};</script>
 <script>
 ${safe(pub('core.js'))}
 </script>

@@ -471,7 +471,7 @@
     const conn = Core.connect(msg => setTimeout(() => onMessage(msg), 0));
     send = msg => conn.receive(JSON.parse(JSON.stringify(msg)));
     connected = true;
-    $('test-badge').hidden = false;
+    $('test-badge').hidden = !!window.FRAGOUT_HIDE_BADGE;   // the school (GitHub Pages) build hides it
   } else {
     const connect = () => {
       ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`);
