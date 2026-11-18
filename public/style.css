@@ -147,7 +147,7 @@ table.board td.k { text-align: right; }
 .feed .a { color: var(--team-a); } .feed .b { color: var(--team-b); }
 @keyframes feedIn { from { transform: skewX(-10deg) translateX(40px); opacity: 0; } }
 
-.aim-hint { position: absolute; bottom: calc(max(16px, env(safe-area-inset-bottom, 0px)) + 74px); left: 50%; transform: translateX(-50%);
+.aim-hint { position: absolute; bottom: calc(max(16px, env(safe-area-inset-bottom, 0px)) + 118px); left: 50%; transform: translateX(-50%);
   font-size: 13px; color: var(--muted); background: rgba(6,8,24,0.6); padding: 5px 12px; white-space: nowrap; }
 
 /* weapon slots (above the grenades): 1 rifle, 2 shotgun with its pump bar */
