@@ -1,0 +1,21 @@
+{
+  "name": "fragout-io",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Keyboard-only 1v1 / 2v2 arena shooter with matchmaking and bot fill",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "build:pages": "node build.js pages",
+    "build:test": "node build.js test"
+  },
+  "dependencies": {
+    "three": "0.149.0",
+    "ws": "^8.18.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/OutlandishDal/fragout-io.git"
+  },
+  "homepage": "https://outlandishdal.github.io/fragout-io/"
+}

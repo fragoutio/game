@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>fragout.io</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Chakra+Petch:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<!--UI-START-->
+<canvas id="view" tabindex="0" aria-label="fragout.io 3D arena"></canvas>
+<div id="labels"></div>
+<div id="scanlines"></div>
+<div id="loading">LOADING ARENA…</div>
+
+<!-- Title -->
+<section class="screen dim" id="screen-title" hidden>
+  <div class="menu-col">
+    <div>
+      <h1 class="logo">FRAGOUT<span class="io">.IO</span></h1>
+      <p class="tag">ARCADE ARENA · 1V1 · 2V2</p>
+      <span class="test-badge" id="test-badge" hidden>TEST BUILD</span>
+    </div>
+    <div class="menu">
+      <button class="mi" data-go="mode"><span>PLAY</span><span class="hint">find a match</span></button>
+      <button class="mi" data-go="locker"><span>LOCKER</span><span class="hint">your character</span></button>
+      <button class="mi" data-go="controls"><span>CONTROLS</span><span class="hint">how to play</span></button>
+      <button class="mi" data-go="settings"><span>SETTINGS</span><span class="hint">graphics · sound</span></button>
+    </div>
+  </div>
+</section>
+
+<!-- Mode select -->
+<section class="screen dim" id="screen-mode" hidden>
+  <div class="menu-col" style="max-width: 640px">
+    <div>
+      <h2 class="title">CHOOSE MODE</h2>
+      <p class="sub">Warm up on the practice range while we find your match.</p>
+    </div>
+    <div class="cards">
+      <button class="mi card" data-mode="1v1"><span class="big">1V1</span><span>DUEL</span><span class="desc">You against one rival. First to 3 rounds.</span></button>
+      <button class="mi card" data-mode="2v2"><span class="big">2V2</span><span>SQUADS</span><span class="desc">Team up. Last team standing takes the round.</span></button>
+    </div>
+    <div class="menu"><button class="mi small" data-go="title"><span>BACK</span></button></div>
+  </div>
+</section>
+
+<!-- Locker / character -->
+<section class="screen dim" id="screen-locker" hidden>
+  <div class="menu-col" style="max-width: 520px">
+    <div>
+      <h2 class="title">LOCKER</h2>
+      <p class="sub">Pick your fit. Other players see it in the arena.</p>
+    </div>
+    <div class="rows">
+      <div class="mi row" data-name><span class="label">NAME</span><input id="name-input" maxlength="12" placeholder="PLAYER" autocomplete="off" spellcheck="false"></div>
+      <div class="mi row" data-opt="jacket"><span class="label">JACKET</span><span class="val"></span></div>
+      <div class="mi row" data-opt="pants"><span class="label">PANTS</span><span class="val"></span></div>
+      <div class="mi row" data-opt="head"><span class="label">HEADGEAR</span><span class="val"></span></div>
+      <div class="mi row" data-opt="headColor"><span class="label">GEAR COLOR</span><span class="val"></span></div>
+      <div class="mi row" data-opt="skin"><span class="label">SKIN</span><span class="val"></span></div>
+      <button class="mi row" data-go="title"><span class="label">DONE</span><span class="val"></span></button>
+    </div>
+  </div>
+</section>
+
+<!-- Controls -->
+<section class="screen solid" id="screen-controls" hidden>
+  <div class="menu-col" style="max-width: 600px">
+    <h2 class="title">CONTROLS</h2>
+    <dl class="ctl">
+      <dt><kbd>W</kbd><kbd>S</kbd></dt><dd>Walk forward / back</dd>
+      <dt><kbd>A</kbd><kbd>D</kbd></dt><dd>Strafe left / right</dd>
+      <dt><kbd>←</kbd><kbd>→</kbd></dt><dd>Turn. Tap for small moves, hold to turn faster.</dd>
+      <dt><kbd>↑</kbd><kbd>↓</kbd></dt><dd>Look up / down</dd>
+      <dt><kbd>W</kbd> <kbd>W</kbd></dt><dd>Double-tap W and keep holding it to run. Let go of W to stop. You can't shoot while running.</dd>
+      <dt><kbd>Shift</kbd> or <kbd>C</kbd></dt><dd>While running: slide. Otherwise: crouch (hold). Crouching makes you a smaller target.</dd>
+      <dt><kbd>Q</kbd> / <kbd>E</kbd> while crouched</dt><dd>Aim down the sight (1.3× zoom): steadier recoil, finer turning. Only works while crouched; stand up and you zoom back out.</dd>
+      <dt><kbd>Q</kbd> / <kbd>E</kbd> while aiming</dt><dd>Lean left / right to shoot around corners. Tap the same key again to straighten up.</dd>
+      <dt><kbd>Space</kbd></dt><dd>Lower the sight (standing up lowers it too).</dd>
+      <dt>Grenades</dt><dd>Hold the key to see where it will go and aim it with the arrow keys. Let go to throw.</dd>
+      <dt><kbd>R</kbd> Boomerang</dt><dd>Curves out and flies back to you. Explodes on an enemy. 10 s cooldown, reset instantly if it hits.</dd>
+      <dt><kbd>G</kbd> Frag</dt><dd>Bounces off walls and the floor. Explodes after 3 s, or straight away if it touches an enemy. Finish them with your gun. 12 s cooldown.</dd>
+      <dt><kbd>F</kbd> Thermite</dt><dd>Makes a wall of fire across your throw where it lands. Burns enemies standing in it. 15 s cooldown.</dd>
+      <dt>Headshots</dt><dd>A hit on the head takes 3 of 5 health, a body hit takes 1. Two headshots knock a player out.</dd>
+      <dt>Auto-fire</dt><dd>Your gun shoots by itself once the crosshair has stayed on an enemy you can see for a moment (it turns yellow, then red when firing).</dd>
+      <dt>Recoil</dt><dd>Every shot kicks your view up and sways it. Hold <kbd>↓</kbd> while firing to stay on target.</dd>
+      <dt><kbd>Esc</kbd></dt><dd>Pause menu (the match keeps going)</dd>
+      <dt>Gamepad</dt><dd>Left stick move, right stick look, Y boomerang, X frag, triggers thermite, D-pad + A in menus</dd>
+      <dd class="note">5 body hits, 2 headshots, or 1 headshot + 2 body hits knock a player out. Last team standing wins the round. First to 3 rounds wins.</dd>
+    </dl>
+    <div class="menu"><button class="mi small" data-go="title"><span>BACK</span></button></div>
+  </div>
+</section>
+
+<!-- Settings -->
+<section class="screen dim" id="screen-settings" hidden>
+  <div class="menu-col" style="max-width: 520px">
+    <div><h2 class="title">SETTINGS</h2><p class="sub">LOW runs best on school laptops and older computers.</p></div>
+    <div class="rows">
+      <div class="mi row" data-set="quality"><span class="label">GRAPHICS</span><span class="val"></span></div>
+      <div class="mi row" data-set="sound"><span class="label">SOUND</span><span class="val"></span></div>
+      <div class="mi row" data-set="fps"><span class="label">SHOW FPS</span><span class="val"></span></div>
+      <button class="mi row" data-go="title"><span class="label">BACK</span><span class="val"></span></button>
+    </div>
+  </div>
+</section>
+
+<!-- Pause -->
+<section class="screen solid" id="screen-pause" hidden>
+  <div class="menu-col" style="max-width: 420px">
+    <div><h2 class="title">PAUSED</h2><p class="sub">The match is still running. Bots and other players keep playing.</p></div>
+    <div class="menu">
+      <button class="mi" data-resume><span>RESUME</span><span class="hint">Esc</span></button>
+      <button class="mi" data-forfeit><span>FORFEIT</span><span class="hint">a bot takes your spot</span></button>
+    </div>
+  </div>
+</section>
+
+<!-- End of match -->
+<section class="screen solid" id="screen-end" hidden>
+  <div class="end-box">
+    <h2 class="end-title" id="end-title">VICTORY</h2>
+    <div class="end-score" id="end-score"></div>
+    <table class="board"><thead><tr><th>PLAYER</th><th>TEAM</th><th style="text-align:right">KOs</th></tr></thead><tbody id="end-board"></tbody></table>
+    <div class="menu">
+      <button class="mi" data-again><span>PLAY AGAIN</span></button>
+      <button class="mi" data-go="title"><span>MAIN MENU</span></button>
+    </div>
+  </div>
+</section>
+
+<!-- In-game HUD -->
+<div id="hud" hidden>
+  <div class="practice-bar" id="practice-bar">
+    <div class="pb-main"><span class="dots">SEARCHING FOR PLAYERS</span><span class="pb-clock" id="pb-clock">0:00</span></div>
+    <div class="pb-sub"><span id="pb-mode">1V1 DUEL</span> · PRACTICE RANGE · TARGETS <b id="pb-score">0</b> · <kbd>Esc</kbd> stop searching</div>
+  </div>
+  <div class="scorebar">
+    <div class="ta"><span class="num" id="s-a">0</span><span class="pips" id="pips-a"></span></div>
+    <div class="mid"><span id="h-mode">1V1</span><span id="h-round">ROUND 1</span></div>
+    <div class="tb"><span class="pips" id="pips-b"></span><span class="num" id="s-b">0</span></div>
+  </div>
+  <div class="feed" id="feed"></div>
+  <div class="me-card">
+    <div class="me-name" id="me-name">PLAYER</div>
+    <div class="hp" id="me-hp"></div>
+    <div class="fire" id="me-fire"><span class="lamp"></span><span>AUTO-FIRE</span></div>
+    <div class="stance" id="me-stance"></div>
+    <div class="recoil"><div id="me-recoil"></div></div>
+  </div>
+  <div class="aim-hint" id="aim-hint"><kbd>W</kbd><kbd>S</kbd> walk · <kbd>A</kbd><kbd>D</kbd> strafe · <kbd>←</kbd><kbd>→</kbd> turn · <kbd>↑</kbd><kbd>↓</kbd> look · double-tap <kbd>W</kbd> run · <kbd>Shift</kbd>/<kbd>C</kbd> crouch/slide · crouch + <kbd>Q</kbd>/<kbd>E</kbd> aim, then lean · <kbd>Space</kbd> lower · hold <kbd>R</kbd><kbd>G</kbd><kbd>F</kbd> grenades</div>
+  <div class="gren" id="gren">
+    <div class="g" data-g="boom"><kbd>R</kbd><span>BOOMERANG</span><b class="cd"></b></div>
+    <div class="g" data-g="frag"><kbd>G</kbd><span>FRAG</span><b class="cd"></b></div>
+    <div class="g" data-g="therm"><kbd>F</kbd><span>THERMITE</span><b class="cd"></b></div>
+  </div>
+  <canvas id="minimap" width="160" height="120" aria-label="Minimap"></canvas>
+  <div id="vignette"></div>
+  <div id="reticle"><i></i><i></i><i></i><i></i><b></b></div>
+  <div id="hitmark"><i></i><i></i><i></i><i></i></div>
+  <div id="aim-tip" hidden></div>
+  <div id="scope" aria-hidden="true"><div class="frame"></div><div class="holo"><i></i><b></b></div></div>
+</div>
+<div id="announce"></div>
+<div id="toast" hidden></div>
+<div id="fps" hidden></div>
+
+<div class="keys-bar" id="keys-bar"><span><kbd>↑</kbd><kbd>↓</kbd> select</span><span><kbd>←</kbd><kbd>→</kbd> change</span><span><kbd>Enter</kbd> confirm</span><span><kbd>Esc</kbd> back</span></div>
+<div id="focus-hint" hidden><div>CLICK TO PLAY WITH KEYBOARD</div></div>
+<!--UI-END-->
+
+<script src="vendor/three.min.js"></script>
+<script src="core.js"></script>
+<script src="characters.js"></script>
+<script src="game3d.js"></script>
+</body>
+</html>
