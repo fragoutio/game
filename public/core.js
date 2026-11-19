@@ -431,7 +431,7 @@ function resetRound(m) {
     Object.assign(p, { x, y, hp: P.hp, alive: true, cool: 0, yaw, pitch: 0, burst: 0, sinceShot: 99,
       stance: 'stand', running: false, slideT: 0, slideCd: 0, cd: { boom: 0, frag: 0, therm: 0 }, throws: [], switchT: 0, cool: 0, z: 0, vz: 0, respawnT: 0, rap: null, onLadder: false });
     p.input = { f: 0, s: 0, yaw, pitch: 0, run: false, crouch: false };
-    p.brain.path = []; p.brain.repath = 0; p.brain.guard = null;
+    p.brain.path = []; p.brain.repath = 0; p.brain.guard = null; Object.assign(p.brain, { via: undefined, retreatT: 0, peekT: 0, pauseT: 0, roam: null, lastSeen: null, seen: 0, aimErr: null });
   }
 }
 
@@ -690,34 +690,92 @@ function followPath(b, inp, tx, ty) {
   return null;
 }
 
+// a random spot a bot can stand on (on the ground), near `near` (within r px) or anywhere; null if none found
+function randomSpot(near, r, test) {
+  for (let k = 0; k < 40; k++) {
+    const x = near ? near[0] + (Math.random() * 2 - 1) * r : 48 + Math.random() * (MAP.w - 96);
+    const y = near ? near[1] + (Math.random() * 2 - 1) * r : 48 + Math.random() * (MAP.h - 96);
+    if (x < 40 || y < 40 || x > MAP.w - 40 || y > MAP.h - 40) continue;
+    if (blocked(x, y, P.r + 6) || navBlocked[cellOf(x, y)]) continue;
+    if (test && !test(x, y)) continue;
+    return [x, y];
+  }
+  return null;
+}
+
+// Bots: they wander between random spots (stopping now and then to check an angle), walk instead of run when
+// enemies may be close, react a moment late when they first spot you (and their first shots are off), and
+// back off to cover when they get hurt, then come back for another look. In Extraction they still play the
+// objective, but each takes its own route.
 function botThink(m, b) {
   const br = b.brain, inp = { mx: 0, my: 0, yaw: b.yaw, pitch: 0 };
   const goal = botGoal(m, b);
   const foes = m.players.filter(o => o.alive && o.team !== b.team);
+  // remember getting hit (to back off)
+  if (br.lastHp != null && b.hp < br.lastHp) br.hurtT = 120;
+  br.lastHp = b.hp;
+  if (br.hurtT > 0) br.hurtT--;
+  const eye = (b.z || 0) + STANCES[b.stance].eye;
+  const canSee = o => lineOfSight(b.x, b.y, o.x, o.y, eye, (o.z || 0) + STANCES[o.stance].height * 0.6);
+  const near = o => Math.hypot(o.x - b.x, o.y - b.y);
+  const walkTo = (x, y, run) => { const yy = followPath(b, inp, x, y); if (yy != null) inp.yaw = yy; inp.run = run; return yy != null; };
   if (!foes.length) {
-    if (goal && goal.mode !== 'hold') { const y = followPath(b, inp, goal.x, goal.y); if (y != null) inp.yaw = y; inp.run = true; }
+    if (goal && goal.mode !== 'hold') walkTo(goal.x, goal.y, true);
     return inp;
   }
-  const t = foes.reduce((a, o) => (Math.hypot(o.x - b.x, o.y - b.y) < Math.hypot(a.x - b.x, a.y - b.y) ? o : a));
-  const dx = t.x - b.x, dy = t.y - b.y, dist = Math.hypot(dx, dy) || 1;
+  // target: the closest enemy it can see, otherwise the closest one
+  const visible = foes.filter(canSee);
+  const t = (visible.length ? visible : foes).reduce((a, o) => (near(o) < near(a) ? o : a));
+  const dx = t.x - b.x, dy = t.y - b.y, dist = Math.hypot(dx, dy) || 1, sees = visible.includes(t);
+  const closest = Math.min(...foes.map(near));
 
   // Aim wobble: bots aren't perfect
   if (--br.wobbleT <= 0) { br.wobble = [(Math.random() - 0.5) * 0.09 / br.skill, (Math.random() - 0.5) * 0.06 / br.skill]; br.wobbleT = 15 + Math.random() * 25; }
+  const aimAt = () => {
+    const err = br.aimErr || [0, 0];
+    inp.yaw = Math.atan2(dy, dx) + br.wobble[0] + err[0];
+    inp.pitch = Math.atan2((t.z || 0) + STANCES[t.stance].height * 0.6 - eye, dist) + br.wobble[1] + err[1];
+    if (br.seen > br.react) br.aimErr = [err[0] * 0.93, err[1] * 0.93];   // settles onto you after it reacts
+  };
 
-  if (lineOfSight(b.x, b.y, t.x, t.y, (b.z || 0) + STANCES[b.stance].eye, (t.z || 0) + STANCES[t.stance].height * 0.6)) {
-    br.path = []; br.seen++;   // reaction time: counts up while the target is in view
-    inp.yaw = Math.atan2(dy, dx) + br.wobble[0];
-    inp.pitch = Math.atan2((t.z || 0) + STANCES[t.stance].height * 0.6 - (b.z || 0) - STANCES[b.stance].eye, dist) + br.wobble[1];
-    // Strafe sideways, keep a comfortable distance
-    if (--br.strafeT <= 0) { br.strafe *= -1; br.strafeT = 25 + Math.random() * 45; }
-    let mx = -dy / dist * br.strafe, my = dx / dist * br.strafe;
-    if (dist < 120) { mx -= dx / dist; my -= dy / dist; } else if (dist > 300) { mx += dx / dist; my += dy / dist; }
-    inp.mx = mx; inp.my = my;
+  // backing off to cover
+  if (br.retreatT > 0) {
+    br.retreatT--;
+    if (sees) { br.seen++; aimAt(); } else br.seen = 0;
+    const moving = walkTo(br.retreatTo[0], br.retreatTo[1], !sees);
+    if (sees) inp.yaw = Math.atan2(dy, dx) + br.wobble[0];   // backs off facing you, still shooting
+    if (!moving || Math.hypot(br.retreatTo[0] - b.x, br.retreatTo[1] - b.y) < 12) { inp.mx = inp.my = 0; inp.crouch = br.hurtT > 0; }
+    if (br.retreatT <= 0) { br.peekT = 60 + Math.random() * 90; br.lastSeen = [t.x, t.y]; }
+    return inp;
+  }
+
+  if (sees) {
+    if (!br.seen) {   // just spotted someone: a moment to react, and the first shots are off target
+      br.react = (24 + Math.random() * 30) / br.skill + (b.running ? 20 : 0) + (br.pauseT > 0 ? -8 : 0);
+      br.aimErr = [(Math.random() - 0.5) * 0.45, (Math.random() - 0.5) * 0.2];
+      br.style = Math.random();   // how it fights this time: strafe / stand / crouch
+    }
+    br.path = []; br.seen++; br.lastSeen = [t.x, t.y]; br.lostT = 0; br.pauseT = 0;
+    aimAt();
+    // movement while fighting: strafe, stand still, or crouch (changes now and then)
+    if (--br.strafeT <= 0) { br.strafe *= -1; br.strafeT = 25 + Math.random() * 45; if (Math.random() < 0.3) br.style = Math.random(); }
+    if (br.style < 0.55) {
+      let mx = -dy / dist * br.strafe, my = dx / dist * br.strafe;
+      if (dist < 120) { mx -= dx / dist; my -= dy / dist; } else if (dist > 320) { mx += dx / dist * 0.5; my += dy / dist * 0.5; }
+      inp.mx = mx; inp.my = my;
+    } else if (br.style < 0.8) inp.crouch = true;
     // objective first: a carrier keeps heading home and an extractor stays on the gem while shooting
-    if (goal && goal.mode === 'go' && m.gem && m.gem.carrier === b.id) { inp.mx = 0; inp.my = 0; followPath(b, inp, goal.x, goal.y); }
+    const carrying = goal && goal.mode === 'go' && m.gem && m.gem.carrier === b.id;
+    if (carrying) { inp.mx = 0; inp.my = 0; inp.crouch = false; followPath(b, inp, goal.x, goal.y); aimAt(); }
     if (goal && goal.mode === 'hold') { inp.mx = 0; inp.my = 0; }
     if (b.weapon !== 'shotgun' && dist < 100) inp.weapon = 'shotgun';
     else if (b.weapon === 'shotgun' && dist > 170) inp.weapon = 'rifle';
+    // back off when hurt (or now and then after a long fight), unless it's holding the objective
+    const busy = carrying || (goal && goal.mode === 'hold');
+    if (!busy && ((br.hurtT > 100 && b.hp <= 60 && Math.random() < 0.35) || (br.seen > 90 && Math.random() < 0.006))) {
+      const away = randomSpot([b.x - dx / dist * 140, b.y - dy / dist * 140], 110, (x, y) => !lineOfSight(x, y, t.x, t.y, 33, 33) && Math.hypot(x - t.x, y - t.y) > dist);
+      if (away) { br.retreatTo = away; br.retreatT = 70 + Math.random() * 80; br.path = []; }
+    }
     // grenades: often an opener while they line up their first shot, sometimes mid-fight
     if (br.seen > 6) {
       const r = Math.random() / br.skill, opener = br.seen < br.react + 10;
@@ -727,14 +785,50 @@ function botThink(m, b) {
       else if (!b.cd.therm && dist > 80 && dist < 230 && r < 0.02 * k) inp.throw = 'therm';
       if (inp.throw) br.throwDist = dist;
     }
-  } else {
-    br.seen = 0;
-    if (goal && goal.mode === 'hold') return inp;   // hold the spot (extracting, guarding)
-    // head for the objective if there is one, otherwise hunt the nearest enemy; look ahead along the route
-    const [gx, gy] = goal ? (goal.mode === 'escort' ? [goal.x + 30, goal.y + 30] : [goal.x, goal.y]) : [t.x, t.y];
-    const y = followPath(b, inp, gx, gy);
-    if (y != null) { inp.yaw = y; inp.run = true; }
+    return inp;
   }
+
+  br.seen = 0; br.lostT = (br.lostT || 0) + 1;
+  if (goal && goal.mode === 'hold') return inp;   // hold the spot (extracting, guarding)
+  const cautious = closest < 520;   // walk (quieter, can shoot) when enemies may be close; run when far
+  // after a retreat: hold the angle where it last saw you for a moment, then push it
+  if (br.peekT > 0) {
+    br.peekT--;
+    if (br.lastSeen) inp.yaw = Math.atan2(br.lastSeen[1] - b.y, br.lastSeen[0] - b.x);
+    if (br.peekT < 30 && br.lastSeen) walkTo(br.lastSeen[0], br.lastSeen[1], false);
+    return inp;
+  }
+  // stopped to check an angle: look around a bit
+  if (br.pauseT > 0) {
+    br.pauseT--;
+    br.lookT = (br.lookT || 0) + 1;
+    inp.yaw = (br.lookYaw ?? b.yaw) + Math.sin(br.lookT / 25) * 0.7;
+    inp.crouch = br.pauseCrouch;
+    return inp;
+  }
+  if (goal) {   // objective, each bot by its own route (a detour point near it first)
+    if (goal.mode === 'go' && !(m.gem && m.gem.carrier === b.id) && br.via === undefined) br.via = Math.random() < 0.7 ? randomSpot([goal.x, goal.y], 280) : null;
+    if (br.via && Math.hypot(br.via[0] - b.x, br.via[1] - b.y) < 40) br.via = null;
+    const [gx, gy] = br.via || (goal.mode === 'escort' ? [goal.x + 30, goal.y + 30] : [goal.x, goal.y]);
+    walkTo(gx, gy, !cautious || (m.gem && m.gem.carrier === b.id));
+    if (cautious && !(m.gem && m.gem.carrier === b.id) && Math.random() < 0.004) { br.pauseT = 30 + Math.random() * 70; br.lookYaw = b.yaw; br.pauseCrouch = Math.random() < 0.4; }
+    return inp;
+  }
+  // no objective: check where it last saw someone, otherwise roam (often toward where enemies are)
+  if (br.lastSeen && br.lostT < 150) {
+    if (!walkTo(br.lastSeen[0], br.lastSeen[1], false) || Math.hypot(br.lastSeen[0] - b.x, br.lastSeen[1] - b.y) < 20) br.lastSeen = null;
+    return inp;
+  }
+  if (!br.roam || --br.roamT <= 0 || Math.hypot(br.roam[0] - b.x, br.roam[1] - b.y) < 24) {
+    if (br.roam && Math.random() < 0.6) { br.pauseT = 40 + Math.random() * 110; br.lookYaw = b.yaw; br.lookT = 0; br.pauseCrouch = Math.random() < 0.35; }
+    const toward = foes[(Math.random() * foes.length) | 0];
+    br.roam = (Math.random() < 0.55 ? randomSpot([toward.x, toward.y], 300) : null) || randomSpot(null) || [t.x, t.y];
+    br.roamT = 300 + Math.random() * 300;
+    br.path = [];
+    if (br.pauseT > 0) return inp;
+  }
+  if (!walkTo(br.roam[0], br.roam[1], !cautious)) br.roamT = 0;
+  if (cautious && Math.random() < 0.003) { br.pauseT = 30 + Math.random() * 80; br.lookYaw = b.yaw; br.lookT = 0; br.pauseCrouch = Math.random() < 0.4; }
   return inp;
 }
 
@@ -992,7 +1086,7 @@ function respawnDefender(m, p) {
   Object.assign(p, { rap: null, onLadder: false, x: far[0], y: far[1], yaw: far[2], pitch: 0, z: 0, vz: 0, hp: P.hp, alive: true, cool: 0, burst: 0, stance: 'stand',
     running: false, slideT: 0, switchT: 0, respawnT: 0 });
   p.input = Object.assign({}, p.input, { yaw: far[2], pitch: 0 });
-  p.brain.path = []; p.brain.repath = 0; p.brain.guard = null;
+  p.brain.path = []; p.brain.repath = 0; p.brain.guard = null; Object.assign(p.brain, { via: undefined, retreatT: 0, peekT: 0, pauseT: 0, roam: null, lastSeen: null, seen: 0, aimErr: null });
   m.events.push(['rs', p.id]);
 }
 
