@@ -899,7 +899,7 @@
       if (ev[0] === 'gd') { toast('The gem was dropped!'); sfx.denied(); continue; }
       if (ev[0] === 'gr') { toast('The gem was returned to the middle'); continue; }
       if (ev[0] === 'gw') { continue; }
-      if (ev[0] === 'cp') { const a = actors.get(ev[1]), d = actors.get(ev[2]); if (ev[1] === match.you) { announce('REBOOT CARD PICKED UP', `${d ? d.info.name : 'A teammate'} · take it to the back of your base`, '#5dffb4', 1800); sfx.ready(); } else if (ev[2] === match.you) toast(`${a ? a.info.name : 'A teammate'} has your reboot card`); continue; }
+      if (ev[0] === 'cp') { const a = actors.get(ev[1]), d = actors.get(ev[2]); if (ev[1] === match.you) { announce('REBOOT CARD', `${d ? d.info.name : 'A teammate'} · take it to the back of your base`, '#5dffb4', 1800); sfx.ready(); } else if (ev[2] === match.you) toast(`${a ? a.info.name : 'A teammate'} has your reboot card`); continue; }
       if (ev[0] === 'rb') { const a = actors.get(ev[1]), d = actors.get(ev[2]); toast(`${a ? a.info.name : 'Someone'} rebooted ${d ? d.info.name : 'a teammate'}!`); sfx.ready(); if (ev[2] === match.you) announce('REBOOTED', 'back in the fight', 'var(--good)', 1200); continue; }
       if (ev[0] === 'r') { if (ev[1] === match.you) { sfx.ready(); flashClass(document.querySelector('#gren [data-g="boom"]'), 'ready', 600); } continue; }
       if (ev[0] === 's') {
