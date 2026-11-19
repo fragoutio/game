@@ -560,6 +560,7 @@
     document.querySelector('[data-pcreate]').hidden = inP;
     document.querySelector('[data-pleave]').hidden = !inP;
     document.querySelector('[data-pplay]').hidden = !(inP && party.leader);
+    document.querySelector('[data-mode="2v2"]').hidden = !inP;   // 2v2 is only for parties
     $('party-hint').textContent = inP ? `${party.members.length} IN PARTY · ${party.code}` : 'play with friends';
     $('mode-sub').textContent = inP && party.members.length > 1
       ? `Your party of ${party.members.length} joins this match together, on the same team.`
@@ -741,6 +742,7 @@
   function queueFor(mode) {
     if (!connected) { toast('Connecting to the server…'); return; }
     if (party && party.code && !party.leader) { sfx.denied(); toast('Waiting for the party leader to start a match'); show('party'); return; }
+    if (mode === '2v2' && !(party && party.code)) { sfx.denied(); toast('2v2 is for parties: make one with PARTY on the main menu'); show('mode'); return; }
     send({ t: 'queue', mode, name: profile.name || 'PLAYER', look: profile.look });
     enterQueue(mode);
   }
