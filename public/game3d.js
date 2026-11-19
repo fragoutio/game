@@ -412,7 +412,7 @@
   const nameInput = $('name-input');
 
   function show(name) {
-    if (name === 'title' && typeof ws !== 'undefined' && ws && ws.readyState === 1 && netMode !== 'online') { netMode = 'online'; netBadge(); }   // server came up while you played offline
+    if (name === 'title' && typeof ws !== 'undefined' && ws && ws.readyState === 1 && !serverOld && onlineCount && netMode !== 'online') { netMode = 'online'; netBadge(); }   // server came up while you played offline
     if (name !== 'game' && name !== 'practice' && typeof cancelAim === 'function' && match) cancelAim();
     for (const s of MENU_SCREENS) $('screen-' + s).hidden = s !== name;
     ui = name; sel = 0;
@@ -686,7 +686,7 @@
   // and bots fill the lobby. Matches started online stay online; the badge on the title screen shows which.
   const params = new URLSearchParams(location.search);
   const SERVER = params.get('server') || window.FRAGOUT_SERVER || (LOCAL ? '' : `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`);
-  let ws = null, connected = false, netMode = SERVER ? 'connecting' : 'offline', onlineCount = 0, localConn = null, inOnlineMatch = false;
+  let serverOld = false, ws = null, connected = false, netMode = SERVER ? 'connecting' : 'offline', onlineCount = 0, localConn = null, inOnlineMatch = false;
   function goOffline() {
     if (!localConn) {
       Core.start({ botFillMs: window.FRAGOUT_BOT_FILL_MS || 30000 });
@@ -697,7 +697,7 @@
   function netBadge() {
     const b = $('net-badge');
     b.className = netMode;
-    b.textContent = netMode === 'online' ? `ONLINE · ${onlineCount} PLAYER${onlineCount === 1 ? '' : 'S'}` : netMode === 'connecting' ? 'CONNECTING TO SERVER…' : 'OFFLINE · BOTS ONLY';
+    b.textContent = netMode === 'online' ? `ONLINE · ${onlineCount} PLAYER${onlineCount === 1 ? '' : 'S'}` : netMode === 'connecting' ? 'CONNECTING TO SERVER…' : serverOld ? 'SERVER UPDATING · BOTS ONLY' : 'OFFLINE · BOTS ONLY';
   }
   const send = msg => {
     if (netMode === 'online' && ws && ws.readyState === 1) ws.send(JSON.stringify(msg));
@@ -708,7 +708,7 @@
     let tries = 0;
     const connect = () => {
       try { ws = new WebSocket(SERVER); } catch { netMode = LOCAL ? 'offline' : 'connecting'; netBadge(); return; }
-      ws.onopen = () => { connected = true; tries = 0; if (!(match && !inOnlineMatch && ui !== 'title')) netMode = 'online'; netBadge(); };
+      ws.onopen = () => { connected = true; tries = 0; };   // online once the server says it has the same map (below)
       ws.onclose = () => {
         const wasOnline = netMode === 'online';
         if (party) { party = null; refreshParty(); }
@@ -718,7 +718,12 @@
         // free servers sleep when nobody plays: the first connection can take up to a minute to wake it
         netBadge(); setTimeout(connect, Math.min(10000, 1500 + 1000 * tries++));
       };
-      ws.onmessage = e => { const m = JSON.parse(e.data); if (m.t === 'online') { onlineCount = m.n; netBadge(); return; } onMessage(m); };
+      ws.onmessage = e => { const m = JSON.parse(e.data); if (m.t === 'online') {
+          onlineCount = m.n; serverOld = m.v !== Core.MAP_ID;
+          if (serverOld) { if (netMode !== 'offline' && !inOnlineMatch) netMode = 'offline'; }   // server not updated yet: bots only
+          else if (netMode !== 'online' && !(match && !inOnlineMatch && ui !== 'title')) netMode = 'online';
+          netBadge(); return;
+        } onMessage(m); };
     };
     connect();
   }

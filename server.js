@@ -34,7 +34,7 @@ wss.on('connection', ws => {
   ws.on('pong', () => { ws.alive = true; });
   ws.on('message', raw => { try { conn.receive(JSON.parse(raw)); } catch { /* ignore bad packets */ } });
   ws.on('close', () => conn.close());
-  ws.send(JSON.stringify({ t: 'online', n: wss.clients.size }));
+  ws.send(JSON.stringify({ t: 'online', n: wss.clients.size, v: core.MAP_ID }));
 });
 // keep connections open through hosting proxies (they drop idle sockets) and drop dead ones
 setInterval(() => {
@@ -42,7 +42,7 @@ setInterval(() => {
 }, 25000);
 // tell everyone how many players are online (shown on the title screen)
 setInterval(() => {
-  const msg = JSON.stringify({ t: 'online', n: wss.clients.size });
+  const msg = JSON.stringify({ t: 'online', n: wss.clients.size, v: core.MAP_ID });
   for (const ws of wss.clients) if (ws.readyState === 1) ws.send(msg);
 }, 5000);
 
