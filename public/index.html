@@ -100,10 +100,11 @@
       <dt><kbd>↑</kbd><kbd>↓</kbd></dt><dd>Look up / down</dd>
       <dt><kbd>W</kbd> <kbd>W</kbd></dt><dd>Double-tap W and keep holding it to run. Let go of W to stop. You can't shoot while running.</dd>
       <dt><kbd>Shift</kbd> or <kbd>C</kbd></dt><dd>While running: slide. Otherwise: crouch (hold). Crouching makes you a smaller target.</dd>
-      <dt><kbd>1</kbd> / <kbd>2</kbd></dt><dd>Rifle / shotgun. The shotgun hits hard up close (4 health to the body, 5 to the head — a one-shot knockout) but drops to about 1 health from further away, won't fire at long range, and pumps between shots.</dd>
+      <dt><kbd>1</kbd> / <kbd>2</kbd></dt><dd>Alternator / shotgun. The shotgun hits hard up close (4 health to the body, 5 to the head — a one-shot knockout) but drops to about 1 health from further away, won't fire at long range, and pumps between shots.</dd>
       <dt><kbd>Q</kbd> / <kbd>E</kbd> while crouched</dt><dd>Aim down the sight (1.3× zoom): steadier recoil, finer turning. Only works while crouched; stand up and you zoom back out.</dd>
       <dt><kbd>Q</kbd> / <kbd>E</kbd> while aiming</dt><dd>Lean left / right to shoot around corners. Tap the same key again to straighten up.</dd>
       <dt><kbd>Space</kbd></dt><dd>Lower the sight (standing up lowers it too).</dd>
+      <dt><kbd>T</kbd></dt><dd>Switch the Alternator's sight: 1.3x HOG ring or 2.5x HCOG (zooms in more, turns slower while aiming). It's remembered.</dd>
       <dt><kbd>X</kbd></dt><dd>Upstairs, facing a gap in the floor or a window: rappel down (you can shoot on the way). X again lets go.</dd>
       <dt>Ladders</dt><dd>Walk into a ladder to climb it, walk away from it to climb down. Stairs are in the room corners.</dd>
       <dt>Grenades</dt><dd>Hold the key to see where it will go and aim it with the arrow keys. Let go to throw.</dd>
@@ -184,9 +185,9 @@
     <div class="stance" id="me-stance"></div>
     <div class="recoil"><div id="me-recoil"></div></div>
   </div>
-  <div class="aim-hint" id="aim-hint"><kbd>W</kbd><kbd>S</kbd> walk · <kbd>A</kbd><kbd>D</kbd> strafe · <kbd>←</kbd><kbd>→</kbd> turn · <kbd>↑</kbd><kbd>↓</kbd> look · double-tap <kbd>W</kbd> run · <kbd>Shift</kbd>/<kbd>C</kbd> crouch/slide · crouch + <kbd>Q</kbd>/<kbd>E</kbd> aim, then lean · <kbd>Space</kbd> lower · <kbd>1</kbd><kbd>2</kbd> weapons · hold <kbd>R</kbd><kbd>G</kbd><kbd>F</kbd> grenades · <kbd>X</kbd> rappel</div>
+  <div class="aim-hint" id="aim-hint"><kbd>W</kbd><kbd>S</kbd> walk · <kbd>A</kbd><kbd>D</kbd> strafe · <kbd>←</kbd><kbd>→</kbd> turn · <kbd>↑</kbd><kbd>↓</kbd> look · double-tap <kbd>W</kbd> run · <kbd>Shift</kbd>/<kbd>C</kbd> crouch/slide · crouch + <kbd>Q</kbd>/<kbd>E</kbd> aim, then lean · <kbd>Space</kbd> lower · <kbd>1</kbd><kbd>2</kbd> weapons · <kbd>T</kbd> sight · hold <kbd>R</kbd><kbd>G</kbd><kbd>F</kbd> grenades · <kbd>X</kbd> rappel</div>
   <div class="weapons" id="weapons">
-    <div class="w active" data-w="rifle"><kbd>1</kbd><span>RIFLE</span></div>
+    <div class="w active" data-w="rifle"><kbd>1</kbd><span>ALTERNATOR</span><em class="optic"><kbd>T</kbd><b id="optic-tag">1.3X</b></em></div>
     <div class="w" data-w="shotgun"><kbd>2</kbd><span>SHOTGUN</span><i class="pump"><i></i></i></div>
   </div>
   <div class="gren" id="gren">
@@ -201,6 +202,7 @@
   <div id="aim-tip" hidden></div>
   <div id="move-tip" hidden></div>
   <div id="scope" aria-hidden="true"><div class="frame"></div><div class="holo"><i></i><b></b></div>
+    <div class="hcog"><div class="box"><span>2.5×</span></div><div class="ret"><s class="l"></s><s class="r"></s><u></u><em><i></i><i></i><i></i></em></div></div>
     <div class="spread"><s></s><s></s><s></s><s></s><b></b></div></div>
 </div>
 <div id="announce"></div>

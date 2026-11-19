@@ -76,7 +76,8 @@ Everything also works with a mouse or a gamepad (D-pad + A/B).
 | ↑ / ↓ | Look up / down |
 | W, W | Double-tap W and keep holding to run (like Minecraft); let go of W to stop. You can't shoot while running |
 | Shift or C | While running: slide (fast, low, slows into a crouch). Otherwise: crouch (hold) |
-| 1 / 2 | Rifle / shotgun (0.4 s to switch) |
+| 1 / 2 | Alternator / shotgun (0.4 s to switch) |
+| T | Alternator sight: 1.3x HOG or 2.5x HCOG |
 | Q / E (while crouched) | Aim down the sight (1.3x zoom, round holo sight): 25% less recoil, finer turning. Only while crouched: stand up and you zoom back out |
 | Q / E while aiming | Lean left / right (tap again to straighten up): your eye and gun shift 11 px to the side, stopping short of walls |
 | Space | Lower the sight (standing up also lowers it) |
@@ -117,7 +118,7 @@ Tuning lives in the `P` object near the top of `public/core.js` (`recoilPitch`, 
 
 | Key | Weapon | Damage (5 health = 100 hp) | Fire |
 |---|---|---|---|
-| 1 | Rifle | 1 health body, 3 head, any range | fast (every 7 ticks), climbing recoil pattern |
+| 1 | Alternator | 1 health body, 3 head, any range | fast (every 7 ticks), climbing recoil pattern |
 | 2 | Shotgun | up close (≤ 60 px): 4 health body, 5 head (one-shot knockout); falls to about 1 health by 160 px; won't fire beyond 260 px | pump (every 54 ticks), wide spread, one big kick per shot |
 
 Both auto-fire. Tuning is the `WEAPONS` table in `public/core.js`. Bots switch to the shotgun when you're

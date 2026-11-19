@@ -19,7 +19,7 @@
     get(k, d) { try { const v = localStorage.getItem('fragout-' + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
     set(k, v) { try { localStorage.setItem('fragout-' + k, JSON.stringify(v)); } catch { /* storage blocked */ } },
   };
-  const profile = Object.assign({ name: '', look: { jacket: 0, pants: 0, head: 4, headColor: 0, skin: 0 } }, store.get('profile', {}));
+  const profile = Object.assign({ name: '', optic: 'hog', look: { jacket: 0, pants: 0, head: 4, headColor: 0, skin: 0 } }, store.get('profile', {}));
   const settings = Object.assign({ quality: 'medium', sound: true, fps: false }, store.get('settings', {}));
 
   // ---------- Renderer ----------
@@ -253,7 +253,13 @@
     add(new THREE.BoxGeometry(0.09, 0.11, 0.42), gunMat, 0, 0, -0.08, rifle);
     add(new THREE.BoxGeometry(0.095, 0.025, 0.3), glow, 0, 0.045, -0.06, rifle);
     add(new THREE.BoxGeometry(0.06, 0.13, 0.07), gunMat, 0, -0.1, 0.06, rifle);                    // grip
-    add(new THREE.BoxGeometry(0.05, 0.04, 0.12), dark, 0, 0.08, -0.02, rifle);                     // sight
+    const hogSight = add(new THREE.BoxGeometry(0.05, 0.04, 0.12), dark, 0, 0.08, -0.02, rifle);    // 1.3x HOG
+    const hcogSight = new THREE.Group(); rifle.add(hcogSight);                                       // 2.5x HCOG: boxy housing with a lens
+    add(new THREE.BoxGeometry(0.075, 0.07, 0.15), dark, 0, 0.095, -0.03, hcogSight);
+    add(new THREE.BoxGeometry(0.085, 0.012, 0.17), gunMat, 0, 0.133, -0.03, hcogSight);
+    add(new THREE.BoxGeometry(0.06, 0.05, 0.005), basic(0xff6a2a, { transparent: true, opacity: 0.35 }), 0, 0.097, -0.106, hcogSight);
+    vm.optics = { hog: hogSight, hcog: hcogSight };
+    hogSight.visible = profile.optic !== 'hcog'; hcogSight.visible = profile.optic === 'hcog';
     const barrel = add(new THREE.CylinderGeometry(0.028, 0.028, 0.2, 6), dark, 0, 0.005, -0.36, rifle); barrel.rotation.x = Math.PI / 2;
     // shotgun: long lever-action style — stock, boxy receiver, long barrel with a flared choke, tube magazine
     // underneath, a fore-grip that racks back and a side lever that flips after each shot
@@ -636,6 +642,7 @@
     if ((ui === 'game' || ui === 'practice') && (e.ctrlKey || e.code === 'ShiftLeft' || e.code === 'ShiftRight')) e.preventDefault();
     if (ui === 'game' || ui === 'practice') {
       if (e.code === 'Escape') back();
+      else if (e.code === 'KeyT' && !e.repeat) switchOptic();
       else if (e.code === 'KeyX' && !e.repeat) { me.rapN = (me.rapN || 0) + 1; me.wantRap = true; }
       else if (GREN_KEYS[e.code] && !e.repeat) startAim(GREN_KEYS[e.code]);
       else if ((e.code === 'KeyQ' || e.code === 'KeyE') && !e.repeat) sightKey(e.code === 'KeyQ' ? -1 : 1);
@@ -892,7 +899,7 @@
         if (mine) {
           // recoil: the same kick the server uses for bots, applied to your view
           const k = Core.weaponKick(WEAPON_NAMES[ev[6] || 0], ev[2]);
-          if (ev[6] === 1) vm.pumpT = 0.75;   // rack the pump
+          if (ev[6] === 1) vm.pumpT = 0.4;   // rack the pump
           const steady = me.ads ? 0.75 : 1;   // aiming down the sight is steadier
           me.pitch = Math.min(CP.pitchMax, me.pitch + k.pitch * steady); me.yaw += k.yaw * steady;
           vm.kick = 1; vm.flashT = 0.05; me.burstT = now; me.bursts = ev[2] + 1;
@@ -986,7 +993,7 @@
     me.holdYaw = turn ? me.holdYaw + ticks : 0;
     me.holdPitch = look ? me.holdPitch + ticks : 0;
     const spd = h => Math.min(CP.turnMax, CP.turnMin + h * CP.turnAccel);
-    const fine = me.ads ? 0.65 : 1;   // slower, finer turning while aiming down the sight
+    const fine = me.ads ? (hcog() ? 0.4 : 0.65) : 1;   // slower, finer turning while aiming down the sight (more with more zoom)
     me.yaw += Math.sign(turn) * Math.min(1, Math.abs(turn)) * spd(me.holdYaw) * fine * ticks;
     me.pitch = Math.max(-CP.pitchMax, Math.min(CP.pitchMax, me.pitch + Math.sign(look) * Math.min(1, Math.abs(look)) * spd(me.holdPitch) * CP.pitchScale * fine * ticks));
     me.yaw = Math.atan2(Math.sin(me.yaw), Math.cos(me.yaw));
@@ -1227,6 +1234,8 @@
   }
   function updateWeaponHud() {
     for (const el of document.querySelectorAll('#weapons .w')) el.classList.toggle('active', el.dataset.w === me.weapon);
+    $('optic-tag').textContent = profile.optic === 'hcog' ? '2.5X' : '1.3X';
+    if (vm.optics) { vm.optics.hog.visible = profile.optic !== 'hcog'; vm.optics.hcog.visible = profile.optic === 'hcog'; }
   }
 
   // ---------- Aiming down the sight + leaning ----------
@@ -1234,6 +1243,15 @@
   // and E leans right (tap the same key again to straighten up). Space lowers the sight; standing up does too.
   const ADS_FOV = 2 * Math.atan(Math.tan(75 / 2 * Math.PI / 180) / 1.3) * 180 / Math.PI;   // 1.3x zoom over the 75 deg view
   const ADS_FOV_SG = 2 * Math.atan(Math.tan(75 / 2 * Math.PI / 180) / 1.15) * 180 / Math.PI; // shotgun: lighter 1.15x
+  const ADS_FOV_HCOG = 2 * Math.atan(Math.tan(75 / 2 * Math.PI / 180) / 2.5) * 180 / Math.PI; // Alternator with the 2.5x HCOG
+  const hcog = () => me.weapon !== 'shotgun' && profile.optic === 'hcog';
+  // T: switch the Alternator's optic between the 1.3x HOG ring and the 2.5x HCOG
+  function switchOptic() {
+    profile.optic = profile.optic === 'hcog' ? 'hog' : 'hcog'; store.set('profile', profile);
+    sfx.swap(); updateWeaponHud();
+    const tip = $('aim-tip'); tip.textContent = profile.optic === 'hcog' ? 'ALTERNATOR · 2.5X HCOG' : 'ALTERNATOR · 1.3X HOG';
+    tip.hidden = false; clearTimeout(tip._t); tip._t = setTimeout(() => { if (!aiming) tip.hidden = true; }, 1100);
+  }
   function sightKey(side) {
     if (!me.alive) return;
     if (me.stance !== 'crouch') {   // you can only aim down the sight while crouched
@@ -1258,7 +1276,7 @@
     const side = me.leanAmt < 0 ? -1 : 1, [lx, ly] = Core.eyePos(me.x, me.y, me.yaw, Math.abs(me.leanAmt) > 0.01 ? side : 0);
     const lk = Math.abs(me.leanAmt);
     wantPos.set((me.x + (lx - me.x) * lk) * S, (me.z || 0) * S + me.eyeY + bob, (me.y + (ly - me.y) * lk) * S);
-    const fov = me.stance === 'slide' ? 86 : me.running ? 82 : me.ads ? (me.weapon === 'shotgun' ? ADS_FOV_SG : ADS_FOV) : 75;
+    const fov = me.stance === 'slide' ? 86 : me.running ? 82 : me.ads ? (me.weapon === 'shotgun' ? ADS_FOV_SG : hcog() ? ADS_FOV_HCOG : ADS_FOV) : 75;
     me.fov += (fov - me.fov) * Math.min(1, dt * 8);
     setFov(Math.round(me.fov * 10) / 10);
     me.roll += ((me.stance === 'slide' ? 0.07 : 0) - me.leanAmt * 0.14 - me.roll) * Math.min(1, dt * 10);
@@ -1277,6 +1295,7 @@
     const scope = $('scope');
     scope.classList.toggle('on', !!me.ads);
     scope.classList.toggle('sg', me.weapon === 'shotgun');   // shotgun: spread-bracket sight instead of the ring
+    scope.classList.toggle('hc', hcog());                     // Alternator 2.5x: boxy HCOG with a chevron reticle
     scope.classList.toggle('arming', ret.classList.contains('arming'));
     scope.classList.toggle('hot', onTarget);
     scope.style.transform = `rotate(${(-me.roll).toFixed(3)}rad)`;
@@ -1285,7 +1304,7 @@
     const base = me.weapon === 'shotgun' ? 16 : 7;
     ret.style.setProperty('--spread', `${(me.running ? 14 : base) + Math.min(10, me.bursts * 1.6)}px`);
     // shotgun pump: the slot's bar refills between shots
-    const pumpLeft = Math.max(0, (vm.pumpT || 0) / 0.75);
+    const pumpLeft = Math.max(0, (vm.pumpT || 0) / 0.4);
     const bar = document.querySelector('#weapons [data-w="shotgun"] .pump > i');
     if (bar) bar.style.width = `${(1 - pumpLeft) * 100}%`;
     $('me-fire').classList.toggle('on', onTarget);
@@ -1305,10 +1324,11 @@
     const a = vm.ads, sw = sway * (1 - a * 0.7);
     vm.group.position.set((0.17 + sw + vm.run * 0.04) * (1 - a), (-0.17 - Math.abs(sw) * 0.6 - vm.run * 0.08) * (1 - a) - 0.105 * a, -0.5 + vm.kick * 0.05 * (1 - a * 0.5) + 0.06 * a);
     if (vm.guns) { vm.guns.rifle.visible = me.weapon !== 'shotgun'; vm.guns.shotgun.visible = me.weapon === 'shotgun'; }
+    if (vm.optics) vm.optics.hcog.visible = profile.optic === 'hcog' && a < 0.5;   // looking through the HCOG: its housing is the frame on screen
     vm.switchT = Math.max(0, (vm.switchT || 0) - dt);
     vm.group.position.y -= Math.sin(Math.min(1, vm.switchT / 0.4) * Math.PI) * 0.18;
     vm.pumpT = Math.max(0, (vm.pumpT || 0) - dt);
-    const rack = Math.sin(Math.min(1, vm.pumpT / 0.75) * Math.PI);
+    const rack = Math.sin(Math.min(1, vm.pumpT / 0.4) * Math.PI);
     if (vm.pump) vm.pump.position.z = -0.36 + rack * 0.1;
     if (vm.lever) vm.lever.rotation.x = rack * 0.9;
     vm.flash.position.z = me.weapon === 'shotgun' ? -0.86 : -0.5;   // muzzle flash at the end of the long barrel

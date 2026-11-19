@@ -167,7 +167,7 @@ const EXTRACT = { extractR: 44, extractTicks: 180, pickR: 22, roundTicks: 180 * 
 const STANCES = { stand: { eye: 33, height: 42 }, crouch: { eye: 21, height: 29 }, slide: { eye: 14, height: 22 } };
 const STANCE_CODE = { stand: 0, crouch: 1, slide: 2 };
 
-// Weapons. Key 1 = rifle, key 2 = shotgun. Both auto-fire when the crosshair is on an enemy.
+// Weapons. Key 1 = rifle (shown as the ALTERNATOR), key 2 = shotgun. Both auto-fire when the crosshair is on an enemy.
 // Damage is in hp (5 health = 100 hp, so 20 hp = 1 health).
 const WEAPONS = {
   // rifle: 1 health per body hit, 3 per headshot, steady fire, recoil pattern from recoilKick()
@@ -175,7 +175,7 @@ const WEAPONS = {
   // shotgun: up close (within `close` px) 4 health to the body, 5 to the head (a one-shot knockout); damage
   // drops steeply to `minFactor` (about 1 health) by `far`, and it won't fire beyond `range`. Only worth it
   // up close. Wide spread (forgiving aim), pumps between shots, one big kick per shot.
-  shotgun: { code: 1, cooldown: 54, body: 80, head: 100, spread: 7, close: 60, far: 160, minFactor: 0.25, range: 260,
+  shotgun: { code: 1, cooldown: 27, body: 80, head: 100, spread: 7, close: 60, far: 160, minFactor: 0.25, range: 260,
     kick: 0.075, kickYaw: 0.02 },
 };
 const WEAPON_BY_CODE = ['rifle', 'shotgun'];
