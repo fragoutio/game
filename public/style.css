@@ -335,3 +335,4 @@ table.board td.k { text-align: right; }
 
 #card-banner { position: absolute; left: 50%; top: 150px; transform: translateX(-50%); white-space: nowrap; font-family: var(--font-display); font-size: 18px;
   letter-spacing: 1.5px; color: #5dffb4; text-shadow: 2px 2px 0 rgba(0,0,0,0.7); pointer-events: none; }
+.me-card .me-cards { font-family: var(--font-display); font-size: 16px; letter-spacing: 1.5px; color: #5dffb4; text-shadow: 0 0 6px rgba(93,255,180,0.5); margin-bottom: 2px; }

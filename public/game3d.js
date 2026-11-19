@@ -899,7 +899,7 @@
       if (ev[0] === 'gd') { toast('The gem was dropped!'); sfx.denied(); continue; }
       if (ev[0] === 'gr') { toast('The gem was returned to the middle'); continue; }
       if (ev[0] === 'gw') { continue; }
-      if (ev[0] === 'cp') { const a = actors.get(ev[1]), d = actors.get(ev[2]); if (ev[1] === match.you) { toast(`Got ${d ? d.info.name : 'a teammate'}'s reboot card · take it to the back of your base`); sfx.ready(); } else if (ev[2] === match.you) toast(`${a ? a.info.name : 'A teammate'} has your reboot card`); continue; }
+      if (ev[0] === 'cp') { const a = actors.get(ev[1]), d = actors.get(ev[2]); if (ev[1] === match.you) { announce('REBOOT CARD PICKED UP', `${d ? d.info.name : 'A teammate'} · take it to the back of your base`, '#5dffb4', 1800); sfx.ready(); } else if (ev[2] === match.you) toast(`${a ? a.info.name : 'A teammate'} has your reboot card`); continue; }
       if (ev[0] === 'rb') { const a = actors.get(ev[1]), d = actors.get(ev[2]); toast(`${a ? a.info.name : 'Someone'} rebooted ${d ? d.info.name : 'a teammate'}!`); sfx.ready(); if (ev[2] === match.you) announce('REBOOTED', 'back in the fight', 'var(--good)', 1200); continue; }
       if (ev[0] === 'r') { if (ev[1] === match.you) { sfx.ready(); flashClass(document.querySelector('#gren [data-g="boom"]'), 'ready', 600); } continue; }
       if (ev[0] === 's') {
@@ -1410,14 +1410,18 @@
       m.rotation.y = now * 0.003 + id;
     }
     for (const [id, m] of cardMeshes) if (!seen.has(id)) { scene.remove(m); cardMeshes.delete(id); }
-    const mine = (ex.cards || []).filter(c => c[4] === match.you).length;
+    const myCards = (ex.cards || []).filter(c => c[4] === match.you), mine = myCards.length;
+    // whose cards you're carrying, shown above your name and health
+    const mc = $('me-cards'), names = myCards.map(c => (actors.get(c[0]) ? actors.get(c[0]).info.name : '?')).join(' · ');
+    mc.hidden = !mine;
+    if (mine && mc.textContent !== '♻ REBOOT: ' + names) mc.textContent = '♻ REBOOT: ' + names;
     const atk = ex.attack === match.myTeam;
     for (const t of ['A', 'B']) rebootMarks[t].visible = atk && t === match.myTeam;
     const cb = $('card-banner');
     cb.hidden = !(mine && atk);
     if (mine) cb.textContent = `${mine} REBOOT CARD${mine > 1 ? 'S' : ''} · TAKE ${mine > 1 ? 'THEM' : 'IT'} TO THE BACK OF YOUR BASE`;
   }
-  function clearCards() { for (const m of cardMeshes.values()) scene.remove(m); cardMeshes.clear(); for (const t of ['A', 'B']) rebootMarks[t].visible = false; $('card-banner').hidden = true; }
+  function clearCards() { for (const m of cardMeshes.values()) scene.remove(m); cardMeshes.clear(); for (const t of ['A', 'B']) rebootMarks[t].visible = false; $('card-banner').hidden = true; $('me-cards').hidden = true; }
   function updateExtraction(dt, now) {
     for (const p of panelMeshes.values()) if (p.shake > 0) { p.shake = Math.max(0, p.shake - dt); p.mesh.rotation.y = (Math.random() - 0.5) * p.shake * 0.2; }
     const ex = curState && curState.ex;
