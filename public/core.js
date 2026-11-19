@@ -75,6 +75,8 @@ const MAP = (() => {
     },
     // Extraction: knocked-out defenders come back after 10 s in a far back corner of their own base
     respawn: { A: [[60, 64, 0.6], [60, H - 64, -0.6]], B: [[W - 60, H - 64, -2.5], [W - 60, 64, 2.5]] },
+    // Extraction: reboot point in the middle of the back wall of each home base [x, y, yaw]
+    reboot: { A: [72, H / 2, 0], B: [W - 72, H / 2, Math.PI] },
   };
 })();
 const UP = MAP.upper;
@@ -160,7 +162,9 @@ const P = {
 // Extraction (4v4): attackers extract the gem (stand within extractR px for extractTicks), carry it back
 // to their base. Round timer roundTicks (3 min). A dropped gem is picked up by an attacker (pickR) or sent
 // home by a defender touching it.
-const EXTRACT = { extractR: 44, extractTicks: 180, pickR: 22, roundTicks: 180 * 60 };
+// Reboot cards: a knocked-out attacker drops one; a teammate picks it up by walking over it (cardR) and brings
+// the player back by carrying it to their reboot point (within rebootR). Defenders respawn after defRespawn ticks.
+const EXTRACT = { extractR: 44, extractTicks: 180, pickR: 22, roundTicks: 180 * 60, cardR: 24, rebootR: 48, defRespawn: 300 };
 // Body size per stance: eye height and how tall the hittable body is (head = top headH px)
 // The eye sits at chin level, just under the head, so looking straight ahead lines up a body shot:
 // you have to aim up a little (more the closer they are) to land a headshot.
@@ -421,6 +425,7 @@ function resetRound(m) {
     // like Siege: teams swap attack and defence every round
     m.attack = m.round % 2 === 1 ? 'A' : 'B';
     m.gem = { state: 'home', x: MAP.gem[0], y: MAP.gem[1], carrier: 0, prog: 0 };
+    m.cards = [];
     m.timeLeft = EXTRACT.roundTicks;
   }
   const idx = { A: 0, B: 0 };
@@ -662,6 +667,10 @@ function botGoal(m, b) {
   const base = MAP.bases[b.team], home = [base[0] + base[2] / 2, base[1] + base[3] / 2];
   if (attacking) {
     if (g.state === 'carried' && g.carrier === b.id) return { x: home[0], y: home[1], mode: 'go' };
+    const cards = m.cards || [];
+    if (cards.some(c => c.carrier === b.id)) { const r = MAP.reboot[b.team]; return { x: r[0], y: r[1], mode: 'go' }; }   // bring a teammate back
+    const loose = cards.filter(c => !c.carrier && c.z < 10 && Math.hypot(c.x - b.x, c.y - b.y) < 320);
+    if (loose.length && g.state !== 'carried') { const c = loose[0]; return { x: c.x, y: c.y, mode: 'go' }; }
     if (g.state === 'carried') { const c = m.players.find(o => o.id === g.carrier); return c ? { x: c.x, y: c.y, mode: 'escort' } : null; }
     if (Math.hypot(g.x - b.x, g.y - b.y) < EXTRACT.extractR - 10) return { x: g.x, y: g.y, mode: 'hold' };
     return { x: g.x, y: g.y, mode: 'go' };
@@ -893,7 +902,12 @@ function damage(m, o, amount, owner, src, head, x, y, z) {
     if (owner) owner.kills++;
     m.events.push(['k', owner ? owner.id : 0, o.id, head ? 1 : 0, src]);
     if (m.practice) o.respawnT = 84;
-    if (m.mode === 'extraction' && o.team !== m.attack) o.respawnT = 600;   // defenders are back in 10 s
+    if (m.mode === 'extraction' && o.team !== m.attack) o.respawnT = EXTRACT.defRespawn;   // defenders are back in 5 s
+    if (m.mode === 'extraction' && o.team === m.attack && m.cards) {
+      // an attacker drops their reboot card (and any they were carrying) where they fell
+      for (const c of m.cards) if (c.carrier === o.id) Object.assign(c, { carrier: 0, x: o.x + (Math.random() - 0.5) * 16, y: o.y + (Math.random() - 0.5) * 16, z: o.z || 0 });
+      m.cards.push({ id: o.id, x: o.x, y: o.y, z: o.z || 0, carrier: 0 });
+    }
   }
 }
 
@@ -1090,6 +1104,36 @@ function respawnDefender(m, p) {
   m.events.push(['rs', p.id]);
 }
 
+// an attacker brought back by a reboot card: at their reboot point (nudged off anyone standing there)
+function rebootPlayer(m, p, at) {
+  let [x, y, yaw] = at;
+  for (let k = 0; k < 24; k++) {
+    const a = k * 2.4, d = k ? 18 + k * 3 : 0, tx = at[0] + Math.cos(a) * d, ty = at[1] + Math.sin(a) * d;
+    if (!blocked(tx, ty, P.r) && m.players.every(o => o === p || !o.alive || Math.hypot(o.x - tx, o.y - ty) > 26)) { x = tx; y = ty; break; }
+  }
+  Object.assign(p, { rap: null, onLadder: false, x, y, yaw, pitch: 0, z: 0, vz: 0, hp: P.hp, alive: true, cool: 0, burst: 0, stance: 'stand',
+    running: false, slideT: 0, switchT: 0, respawnT: 0 });
+  p.input = Object.assign({}, p.input, { yaw, pitch: 0 });
+  p.brain.path = []; p.brain.repath = 0; p.brain.guard = null; Object.assign(p.brain, { via: undefined, retreatT: 0, peekT: 0, pauseT: 0, roam: null, lastSeen: null, seen: 0, aimErr: null });
+}
+// reboot cards: pick up by walking over one (attackers only), deliver to your reboot point
+function stepCards(m) {
+  const A = m.attack, X = EXTRACT, at = MAP.reboot[A];
+  for (const c of m.cards) {
+    if (c.carrier) { const p = m.players.find(o => o.id === c.carrier); if (p) { c.x = p.x; c.y = p.y; c.z = p.z || 0; } continue; }
+    const p = m.players.find(o => o.alive && o.team === A && Math.hypot(o.x - c.x, o.y - c.y) < X.cardR && Math.abs((o.z || 0) - c.z) < 30);
+    if (p) { c.carrier = p.id; m.events.push(['cp', p.id, c.id]); }
+  }
+  for (const p of m.players) {
+    if (!p.alive || p.team !== A || Math.hypot(p.x - at[0], p.y - at[1]) > X.rebootR || (p.z || 0) > 10) continue;
+    for (const c of m.cards.filter(c => c.carrier === p.id)) {
+      const who = m.players.find(o => o.id === c.id);
+      m.cards.splice(m.cards.indexOf(c), 1);
+      if (who && !who.alive) { rebootPlayer(m, who, at); m.events.push(['rb', p.id, who.id]); }
+    }
+  }
+}
+
 function endRound(m, winner, reason) {
   if (m.phase !== 'fight') return;
   if (winner) m.score[winner]++;
@@ -1100,6 +1144,7 @@ function endRound(m, winner, reason) {
 function stepExtraction(m) {
   const g = m.gem, A = m.attack, X = EXTRACT;
   if (--m.timeLeft <= 0) return endRound(m, A === 'A' ? 'B' : 'A', 'time');   // defenders hold out
+  if (m.cards) stepCards(m);
   const alive = m.players.filter(p => p.alive);
   if (g.state === 'home') {
     // attackers standing at the gem extract it; a defender in range blocks (contests) it
@@ -1230,7 +1275,7 @@ function stepMatch(m) {
       roundReason: m.roundReason || null,
       broken: m.broken ? [...m.broken] : [], panels: m.panelHp ? [...m.panelHp].filter(([i]) => !m.broken.has(i)) : [],
       ex: g ? { attack: m.attack, gem: [{ home: 0, carried: 1, dropped: 2 }[g.state], Math.round(g.x), Math.round(g.y), g.carrier, Math.round(g.prog / EXTRACT.extractTicks * 100)],
-        time: Math.max(0, Math.ceil(m.timeLeft / 60)) } : null,
+        time: Math.max(0, Math.ceil(m.timeLeft / 60)), cards: (m.cards || []).map(c => [c.id, r1(c.x), r1(c.y), r1(c.z), c.carrier]) } : null,
       players: m.players.map(p => [p.id, r1(p.x), r1(p.y), p.hp, p.alive ? 1 : 0, r3(p.yaw), r3(p.pitch), p.kills,
         STANCE_CODE[p.stance] + (p.running ? 4 : 0) + (p.ads ? 8 : 0) + (p.lean < 0 ? 16 : p.lean > 0 ? 32 : 0) + (p.rap ? 64 : 0) + (p.onLadder ? 128 : 0), Math.ceil(p.cd.boom / 6), Math.ceil(p.cd.frag / 6), Math.ceil(p.cd.therm / 6), WEAPONS[p.weapon || 'rifle'].code + (p.switchT > 0 ? 2 : 0), r1(p.z || 0), p.alive ? 0 : Math.ceil((p.respawnT || 0) / 60)]),
       proj: m.projectiles.map(pr => [pr.id, KIND_CODE[pr.kind], r1(pr.x), r1(pr.y), r1(pr.z), pr.team]),

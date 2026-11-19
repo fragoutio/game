@@ -332,3 +332,6 @@ table.board td.k { text-align: right; }
 #scope .hcog .ret em i:nth-child(1) { width: 14px; } #scope .hcog .ret em i:nth-child(2) { width: 10px; } #scope .hcog .ret em i:nth-child(3) { width: 6px; }
 .weapons .w[data-w="rifle"] { width: 178px; }
 @media (max-width: 640px) { .weapons .w[data-w="rifle"] { width: 150px; } }
+
+#card-banner { position: absolute; left: 50%; top: 150px; transform: translateX(-50%); white-space: nowrap; font-family: var(--font-display); font-size: 18px;
+  letter-spacing: 1.5px; color: #5dffb4; text-shadow: 2px 2px 0 rgba(0,0,0,0.7); pointer-events: none; }

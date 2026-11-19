@@ -767,7 +767,7 @@
     actors.clear(); match = null; prevState = curState = null; matchOver = false;
     vmScene.remove(vm.group); $('feed').innerHTML = '';
     clearGrenadeFx();
-    resetPanels(); gemMesh.visible = false; $('gem-marker').hidden = true; $('ex-hud').hidden = true; $('carry-banner').hidden = true;
+    resetPanels(); clearCards(); gemMesh.visible = false; $('gem-marker').hidden = true; $('ex-hud').hidden = true; $('carry-banner').hidden = true;
   }
   function clearMatchIfOver() { if (matchOver) clearMatch(); }
 
@@ -875,8 +875,13 @@
     if (row && row[4] && !me.alive) { me.x = row[1]; me.y = row[2]; me.z = row[13] || 0; me.vz = 0; me.yaw = row[5]; me.pitch = 0; }   // respawned
     if (row) me.alive = !!row[4];
     if (row && !row[4] && row[14] > 0 && msg.phase === 'fight') announce(`RESPAWNING IN ${row[14]}`, 'back in the far corner of your base', 'var(--cyan)', 0);
+    else if (row && !row[4] && msg.phase === 'fight' && msg.ex && msg.ex.attack === match.myTeam && !match.practice) {
+      const card = (msg.ex.cards || []).find(c => c[0] === match.you), by = card && card[4] && actors.get(card[4]);
+      announce('KNOCKED OUT', by ? `${by.info.name} has your reboot card · they can bring you back` : 'a teammate can grab your reboot card and take it to your base', 'var(--team-b)', 0);
+      me.wasWaiting = true;
+    }
     else if (row && row[4] && me.wasWaiting) announce('');
-    me.wasWaiting = !!(row && !row[4] && row[14] > 0);
+    if (!(row && !row[4] && msg.phase === 'fight' && msg.ex && msg.ex.attack === match.myTeam)) me.wasWaiting = !!(row && !row[4] && row[14] > 0);
 
     for (const ev of msg.ev || []) {
       if (ev[0] === 'g') {
@@ -892,6 +897,8 @@
       if (ev[0] === 'gd') { toast('The gem was dropped!'); sfx.denied(); continue; }
       if (ev[0] === 'gr') { toast('The gem was returned to the middle'); continue; }
       if (ev[0] === 'gw') { continue; }
+      if (ev[0] === 'cp') { const a = actors.get(ev[1]), d = actors.get(ev[2]); if (ev[1] === match.you) { toast(`Got ${d ? d.info.name : 'a teammate'}'s reboot card · take it to the back of your base`); sfx.ready(); } else if (ev[2] === match.you) toast(`${a ? a.info.name : 'A teammate'} has your reboot card`); continue; }
+      if (ev[0] === 'rb') { const a = actors.get(ev[1]), d = actors.get(ev[2]); toast(`${a ? a.info.name : 'Someone'} rebooted ${d ? d.info.name : 'a teammate'}!`); sfx.ready(); if (ev[2] === match.you) announce('REBOOTED', 'back in the fight', 'var(--good)', 1200); continue; }
       if (ev[0] === 'r') { if (ev[1] === match.you) { sfx.ready(); flashClass(document.querySelector('#gren [data-g="boom"]'), 'ready', 600); } continue; }
       if (ev[0] === 's') {
         const mine = ev[1] === match.you;
@@ -1374,12 +1381,48 @@
   }
   const pedestalGem = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.6, 0.4, 8), lam(0x55595f));
   pedestalGem.position.set(MAP.gem[0] * S, 0.2, MAP.gem[1] * S); scene.add(pedestalGem);
+  // reboot cards (flat glowing cards that float where an attacker fell) and each base's reboot point
+  const cardMeshes = new Map();
+  const rebootMarks = {};
+  for (const t of ['A', 'B']) {
+    const [rx, ry] = MAP.reboot[t], g = new THREE.Group();
+    const ring = new THREE.Mesh(new THREE.RingGeometry(1.4, 1.75, 24), basic(TEAM[t].hex, { transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide }));
+    ring.rotation.x = -Math.PI / 2; ring.position.y = 0.03;
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 2.6, 6), basic(TEAM[t].hex, { transparent: true, opacity: 0.5, depthWrite: false }));
+    post.position.y = 1.3; g.add(ring, post); g.position.set(rx * S, 0, ry * S); g.visible = false; scene.add(g);
+    rebootMarks[t] = g;
+  }
+  function cardMesh() {
+    const g = new THREE.Group();
+    const card = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.56, 0.04), basic(0x5dffb4));
+    const glow = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.7, 0.02), basic(0x5dffb4, { transparent: true, opacity: 0.3, depthWrite: false }));
+    g.add(card, glow); scene.add(g); return g;
+  }
+  function updateCards(ex, now) {
+    const seen = new Set();
+    for (const [id, x, y, z, carrier] of ex.cards || []) {
+      seen.add(id);
+      let m = cardMeshes.get(id); if (!m) { m = cardMesh(); cardMeshes.set(id, m); }
+      if (carrier) { const a = actors.get(carrier); m.visible = carrier !== match.you && !!a; if (a) m.position.set(a.x, a.ch.root.position.y + 2.5, a.z); }
+      else { m.visible = true; m.position.set(x * S, z * S + 0.7 + Math.sin(now * 0.004 + id) * 0.1, y * S); }
+      m.rotation.y = now * 0.003 + id;
+    }
+    for (const [id, m] of cardMeshes) if (!seen.has(id)) { scene.remove(m); cardMeshes.delete(id); }
+    const mine = (ex.cards || []).filter(c => c[4] === match.you).length;
+    const atk = ex.attack === match.myTeam;
+    for (const t of ['A', 'B']) rebootMarks[t].visible = atk && t === match.myTeam;
+    const cb = $('card-banner');
+    cb.hidden = !(mine && atk);
+    if (mine) cb.textContent = `${mine} REBOOT CARD${mine > 1 ? 'S' : ''} · TAKE ${mine > 1 ? 'THEM' : 'IT'} TO THE BACK OF YOUR BASE`;
+  }
+  function clearCards() { for (const m of cardMeshes.values()) scene.remove(m); cardMeshes.clear(); for (const t of ['A', 'B']) rebootMarks[t].visible = false; $('card-banner').hidden = true; }
   function updateExtraction(dt, now) {
     for (const p of panelMeshes.values()) if (p.shake > 0) { p.shake = Math.max(0, p.shake - dt); p.mesh.rotation.y = (Math.random() - 0.5) * p.shake * 0.2; }
     const ex = curState && curState.ex;
     const hud = $('ex-hud');
-    if (!ex || match.practice) { hud.hidden = true; gemMesh.visible = false; $('gem-marker').hidden = true; $('carry-banner').hidden = true; return; }
+    if (!ex || match.practice) { hud.hidden = true; gemMesh.visible = false; $('gem-marker').hidden = true; $('carry-banner').hidden = true; clearCards(); return; }
     hud.hidden = false;
+    updateCards(ex, now);
     const [state, gx, gy, carrier, prog] = ex.gem;
     const attacking = ex.attack === match.myTeam;
     $('ex-role').textContent = attacking ? 'ATTACK' : 'DEFEND';
@@ -1521,6 +1564,8 @@
     if (curState && curState.ex) {   // bases and the gem
       for (const t of ['A', 'B']) { const [bx, by, bw, bh] = MAP.bases[t]; mctx.strokeStyle = t === 'A' ? '#3fa9ff' : '#ff4566'; mctx.strokeRect(bx * k, by * k, bw * k, bh * k); }
       mctx.fillStyle = '#5dffb4'; mctx.beginPath(); mctx.arc(curState.ex.gem[1] * k, curState.ex.gem[2] * k, 4, 0, Math.PI * 2); mctx.fill();
+      if (curState.ex.attack === match.myTeam) { const [rx, ry] = MAP.reboot[match.myTeam]; mctx.strokeStyle = '#5dffb4'; mctx.beginPath(); mctx.arc(rx * k, ry * k, 4, 0, Math.PI * 2); mctx.stroke(); }
+      for (const c of curState.ex.cards || []) if (!c[4]) { mctx.fillStyle = '#5dffb4'; mctx.fillRect(c[1] * k - 2, c[2] * k - 2, 4, 4); }
     }
     if (match) for (const [id, a] of actors) {
       if (id === match.you || a.info.team !== match.myTeam || !a.alive) continue;
