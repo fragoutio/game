@@ -104,6 +104,8 @@
       <dt><kbd>Q</kbd> / <kbd>E</kbd> while crouched</dt><dd>Aim down the sight (1.3× zoom): steadier recoil, finer turning. Only works while crouched; stand up and you zoom back out.</dd>
       <dt><kbd>Q</kbd> / <kbd>E</kbd> while aiming</dt><dd>Lean left / right to shoot around corners. Tap the same key again to straighten up.</dd>
       <dt><kbd>Space</kbd></dt><dd>Lower the sight (standing up lowers it too).</dd>
+      <dt><kbd>X</kbd></dt><dd>Upstairs, facing a gap in the floor or a window: rappel down (you can shoot on the way). X again lets go.</dd>
+      <dt>Ladders</dt><dd>Walk into a ladder to climb it, walk away from it to climb down. Stairs are in the room corners.</dd>
       <dt>Grenades</dt><dd>Hold the key to see where it will go and aim it with the arrow keys. Let go to throw.</dd>
       <dt><kbd>R</kbd> Boomerang</dt><dd>Curves out and flies back to you. Explodes on an enemy. 10 s cooldown, reset instantly if it hits.</dd>
       <dt><kbd>G</kbd> Frag</dt><dd>Bounces off walls and the floor. Explodes after 3 s, or straight away if it touches an enemy. Finish them with your gun. 12 s cooldown.</dd>
@@ -182,7 +184,7 @@
     <div class="stance" id="me-stance"></div>
     <div class="recoil"><div id="me-recoil"></div></div>
   </div>
-  <div class="aim-hint" id="aim-hint"><kbd>W</kbd><kbd>S</kbd> walk · <kbd>A</kbd><kbd>D</kbd> strafe · <kbd>←</kbd><kbd>→</kbd> turn · <kbd>↑</kbd><kbd>↓</kbd> look · double-tap <kbd>W</kbd> run · <kbd>Shift</kbd>/<kbd>C</kbd> crouch/slide · crouch + <kbd>Q</kbd>/<kbd>E</kbd> aim, then lean · <kbd>Space</kbd> lower · <kbd>1</kbd><kbd>2</kbd> weapons · hold <kbd>R</kbd><kbd>G</kbd><kbd>F</kbd> grenades</div>
+  <div class="aim-hint" id="aim-hint"><kbd>W</kbd><kbd>S</kbd> walk · <kbd>A</kbd><kbd>D</kbd> strafe · <kbd>←</kbd><kbd>→</kbd> turn · <kbd>↑</kbd><kbd>↓</kbd> look · double-tap <kbd>W</kbd> run · <kbd>Shift</kbd>/<kbd>C</kbd> crouch/slide · crouch + <kbd>Q</kbd>/<kbd>E</kbd> aim, then lean · <kbd>Space</kbd> lower · <kbd>1</kbd><kbd>2</kbd> weapons · hold <kbd>R</kbd><kbd>G</kbd><kbd>F</kbd> grenades · <kbd>X</kbd> rappel</div>
   <div class="weapons" id="weapons">
     <div class="w active" data-w="rifle"><kbd>1</kbd><span>RIFLE</span></div>
     <div class="w" data-w="shotgun"><kbd>2</kbd><span>SHOTGUN</span><i class="pump"><i></i></i></div>
@@ -192,11 +194,12 @@
     <div class="g" data-g="frag"><kbd>G</kbd><span>FRAG</span><b class="cd"></b></div>
     <div class="g" data-g="therm"><kbd>F</kbd><span>THERMITE</span><b class="cd"></b></div>
   </div>
-  <canvas id="minimap" width="200" height="150" aria-label="Minimap"></canvas>
+  <canvas id="minimap" width="200" height="117" aria-label="Minimap"></canvas>
   <div id="vignette"></div>
   <div id="reticle"><i></i><i></i><i></i><i></i><b></b></div>
   <div id="hitmark"><i></i><i></i><i></i><i></i></div>
   <div id="aim-tip" hidden></div>
+  <div id="move-tip" hidden></div>
   <div id="scope" aria-hidden="true"><div class="frame"></div><div class="holo"><i></i><b></b></div>
     <div class="spread"><s></s><s></s><s></s><s></s><b></b></div></div>
 </div>

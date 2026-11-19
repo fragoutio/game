@@ -306,3 +306,6 @@ table.board td.k { text-align: right; }
 #party-list .pm .you { color: var(--muted); font-size: 13px; }
 .nl.menu-tag { font-size: 18px; text-shadow: 2px 2px 0 rgba(0,0,0,0.7); white-space: nowrap; }
 .nl.menu-tag .crown { color: var(--yellow); margin-right: 4px; }
+
+#move-tip { position: absolute; left: 50%; bottom: 22%; transform: translateX(-50%); white-space: nowrap; font-family: var(--font-display);
+  font-size: 20px; letter-spacing: 2px; color: var(--yellow); text-shadow: 2px 2px 0 rgba(0,0,0,0.7); pointer-events: none; }

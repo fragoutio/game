@@ -101,7 +101,9 @@
     const wallMat = lam(0x62666e), crateMat = lam(0x777b83), capMat = lam(0x8d9199);
     const bandA = basic(0xa7adb5), bandB = basic(0x8c9199);
     const VH = CP.ventH * S, ventDark = lam(0x0e0f12), ventBars = [];
-    MAP.walls.forEach(([x, y, w, h, tall], i) => {
+    const FZ0 = MAP.upper.floor * S;
+    MAP.walls.forEach(([x, y, w, h, tall, lvl], i) => {
+      const Y0 = lvl ? FZ0 : 0;
       if (tall === 3) {   // green wood panel (breakable): planks + darker frame lines
         const mat = lam(0x4f8f45);
         const m = new THREE.Mesh(new THREE.BoxGeometry(w * S, BORDER_H, h * S), mat);
@@ -132,17 +134,17 @@
       const border = i < 4 || tall === 1, H = i < 4 ? 7 : border ? BORDER_H : CRATE_H;
       const geo = new THREE.BoxGeometry(w * S, H, h * S);
       const m = new THREE.Mesh(geo, border ? wallMat : crateMat);
-      m.position.set((x + w / 2) * S, H / 2, (y + h / 2) * S); g.add(m);
+      m.position.set((x + w / 2) * S, Y0 + H / 2, (y + h / 2) * S); g.add(m);
       if (border) {
-        for (const yy of [H - 0.1]) {
+        for (const yy of [Y0 + H - 0.1]) {
           const band = new THREE.Mesh(new THREE.BoxGeometry(w * S + 0.02, 0.08, h * S + 0.02), i % 2 ? bandA : bandB);
           band.position.set(m.position.x, yy, m.position.z); g.add(band);
         }
       } else {
         const cap = new THREE.Mesh(new THREE.BoxGeometry(w * S - 0.12, 0.06, h * S - 0.12), capMat);
-        cap.position.set(m.position.x, H + 0.03, m.position.z); g.add(cap);
+        cap.position.set(m.position.x, Y0 + H + 0.03, m.position.z); g.add(cap);
         const stripe = new THREE.Mesh(new THREE.BoxGeometry(w * S + 0.02, 0.07, h * S + 0.02), i % 2 ? bandA : bandB);
-        stripe.position.set(m.position.x, 1.1, m.position.z); g.add(stripe);
+        stripe.position.set(m.position.x, Y0 + 1.1, m.position.z); g.add(stripe);
         const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo), i % 2 ? edgeA : edgeB);
         edges.position.copy(m.position); g.add(edges);
       }
@@ -151,7 +153,7 @@
     // upstairs: balcony floors (with a trim along the edge you can drop off), low railings, stepped stairs
     const UPS = MAP.upper, FZ = UPS.floor * S;
     const slabMat = lam(0x6d7179), slabEdge = basic(0x5dffb4), railMat = lam(0x9aa0a8), stepMat = lam(0x80848c);
-    for (const [sx, sy, sw, sh] of UPS.slabs) {
+    for (const [sx, sy, sw, sh] of Core.slabRects()) {
       const slab = new THREE.Mesh(new THREE.BoxGeometry(sw * S, 0.18, sh * S), slabMat);
       slab.position.set((sx + sw / 2) * S, FZ - 0.09, (sy + sh / 2) * S); g.add(slab);
       const under = new THREE.Mesh(new THREE.BoxGeometry(sw * S, 0.02, sh * S), lam(0x2a2c31));
@@ -161,11 +163,29 @@
       const rail = new THREE.Mesh(new THREE.BoxGeometry(rw * S, UPS.rail * S, rh * S), railMat);
       rail.position.set((rx + rw / 2) * S, FZ + UPS.rail * S / 2, (ry + rh / 2) * S); g.add(rail);
     }
-    // the open edges over the gem room get a glowing strip so you can see where to drop down
-    for (const [sx, sy, sw, sh] of UPS.slabs) {
-      const edgeY = sy + sh / 2 < MAP.gem[1] ? sy + sh : sy;
-      const strip = new THREE.Mesh(new THREE.BoxGeometry(224 * S, 0.04, 0.08), slabEdge);
-      strip.position.set(MAP.gem[0] * S, FZ + 0.02, edgeY * S); g.add(strip);
+    // gaps in the floor get a glowing rim so you can see where to drop or rappel down
+    for (const [hx, hy, hw, hh] of UPS.holes) {
+      for (const [ex, ez, ew, ed] of [[hx, hy, hw, 3], [hx, hy + hh - 3, hw, 3], [hx, hy, 3, hh], [hx + hw - 3, hy, 3, hh]]) {
+        const strip = new THREE.Mesh(new THREE.BoxGeometry(ew * S, 0.05, ed * S), slabEdge);
+        strip.position.set((ex + ew / 2) * S, FZ + 0.02, (ez + ed / 2) * S); g.add(strip);
+      }
+    }
+    // ladders: two rails and rungs, against the edge you climb toward
+    const ladMat = lam(0xd9a441);
+    for (const [lx, ly, lw, lh, d] of UPS.ladders) {
+      const along = d === 'N' || d === 'S';   // rungs run along x for N/S ladders
+      const ex = d === 'W' ? lx : d === 'E' ? lx + lw : lx + lw / 2, ez = d === 'N' ? ly : d === 'S' ? ly + lh : ly + lh / 2;
+      const span = (along ? lw : lh) * S, top = FZ + 0.9;
+      const lad = new THREE.Group(); lad.position.set(ex * S, 0, ez * S);
+      for (const k of [-0.5, 0.5]) {
+        const rail = new THREE.Mesh(new THREE.BoxGeometry(0.08, top, 0.08), ladMat);
+        rail.position.set(along ? k * span : 0, top / 2, along ? 0 : k * span); lad.add(rail);
+      }
+      for (let r = 0.35; r < top; r += 0.4) {
+        const rung = new THREE.Mesh(new THREE.BoxGeometry(along ? span : 0.06, 0.06, along ? 0.06 : span), ladMat);
+        rung.position.set(0, r, 0); lad.add(rung);
+      }
+      g.add(lad);
     }
     for (const [sx, sy, sw, sh, dir] of UPS.stairs) {
       const n = 10, vertical = dir === 'N' || dir === 'S';
@@ -616,6 +636,7 @@
     if ((ui === 'game' || ui === 'practice') && (e.ctrlKey || e.code === 'ShiftLeft' || e.code === 'ShiftRight')) e.preventDefault();
     if (ui === 'game' || ui === 'practice') {
       if (e.code === 'Escape') back();
+      else if (e.code === 'KeyX' && !e.repeat) { me.rapN = (me.rapN || 0) + 1; me.wantRap = true; }
       else if (GREN_KEYS[e.code] && !e.repeat) startAim(GREN_KEYS[e.code]);
       else if ((e.code === 'KeyQ' || e.code === 'KeyE') && !e.repeat) sightKey(e.code === 'KeyQ' ? -1 : 1);
       else if (e.code === 'Space') lowerSight();
@@ -728,7 +749,8 @@
 
   function clearMatch() {
     clearTimeout(endTimer);
-    for (const a of actors.values()) { scene.remove(a.ch.root); a.ch.dispose(); a.label.remove(); }
+    for (const a of actors.values()) { scene.remove(a.ch.root); a.ch.dispose(); a.label.remove(); if (a.rope) scene.remove(a.rope); }
+    me.rap = null; me.onLadder = false; me.wantRap = false;
     actors.clear(); match = null; prevState = curState = null; matchOver = false;
     vmScene.remove(vm.group); $('feed').innerHTML = '';
     clearGrenadeFx();
@@ -982,7 +1004,7 @@
   function sendInput(now) {
     if (now - lastInput < 33) return;
     lastInput = now;
-    sendPlay({ t: 'input', weapon: me.weapon || 'rifle', f: lastMove.f, s: lastMove.s, run: lastMove.run, crouch: lastMove.crouch, ads: !!me.ads, lean: me.lean || 0, x: Math.round(me.x * 10) / 10, y: Math.round(me.y * 10) / 10, yaw: Math.round(me.yaw * 1000) / 1000, pitch: Math.round(me.pitch * 1000) / 1000 });
+    sendPlay({ t: 'input', weapon: me.weapon || 'rifle', f: lastMove.f, s: lastMove.s, run: lastMove.run, crouch: lastMove.crouch, ads: !!me.ads, lean: me.lean || 0, rap: me.rapN || 0, x: Math.round(me.x * 10) / 10, y: Math.round(me.y * 10) / 10, yaw: Math.round(me.yaw * 1000) / 1000, pitch: Math.round(me.pitch * 1000) / 1000 });
   }
 
   // what's under the centre crosshair? Same test as the server (core.castRay): body height depends on
@@ -1405,6 +1427,12 @@
       act.yaw = lerpAngle(act.yaw, Math.PI / 2 - p[5], Math.min(1, dt * 18));
       act.ch.root.rotation.y = act.yaw;
       Chars.animateCharacter(act.ch, dt, act.speed, !!p[4], p[6], act.stance, act.lean);
+      const roped = p[4] && (p[8] & 64) && act.sz < MAP.upper.floor - 1;
+      if (roped) {
+        if (!act.rope) { act.rope = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1, 4), basic(0xe8e2c8)); scene.add(act.rope); }
+        const top = MAP.upper.floor * S + 0.9, bot = act.sz * S + 1.3;
+        act.rope.visible = true; act.rope.scale.y = Math.max(0.05, top - bot); act.rope.position.set(x, (top + bot) / 2, z);
+      } else if (act.rope) act.rope.visible = false;
       // names: teammates always, enemies only when you can actually see them
       proj.set(x, 2.05 + act.sz * S, z).project(camera);
       const seen = act.info.team === match.myTeam || !me.alive || Core.lineOfSight(me.x, me.y, act.sx, act.sy, (me.z || 0) + 33, act.sz + 33);
@@ -1416,6 +1444,14 @@
         act.label.querySelector('.bar > div').style.width = `${p[3]}%`;
       }
     }
+
+    // hints: rappel when you face a gap upstairs, climb when you're at a ladder
+    const tip = $('move-tip');
+    if (me.alive && (ui === 'game' || ui === 'practice')) {
+      const lad = Core.ladderAt(me.x, me.y);
+      tip.textContent = me.rap ? 'RAPPELLING · X LET GO' : Core.rappelSpot(me) ? 'X  RAPPEL DOWN' : lad ? (me.onLadder ? 'W / S  CLIMB' : 'W  CLIMB LADDER') : '';
+      tip.hidden = !tip.textContent;
+    } else tip.hidden = true;
 
     firstPerson = me.alive && !matchOver;
     if (firstPerson) {
@@ -1444,13 +1480,14 @@
   // minimap: walls, you and your teammates (enemies stay hidden)
   const mm = $('minimap'), mctx = mm.getContext('2d');
   let mmAt = 0;
+  const slabsMM = Core.slabRects();
   function drawMinimap(now) {
     if (now - mmAt < 90) return; mmAt = now;
     const k = mm.width / MAP.w;
     mctx.clearRect(0, 0, mm.width, mm.height);
     mctx.fillStyle = 'rgba(20,22,27,0.85)'; mctx.fillRect(0, 0, mm.width, mm.height);
     mctx.fillStyle = 'rgba(93,255,180,0.12)';   // balconies (upstairs)
-    for (const [x, y, w, h] of MAP.upper.slabs) mctx.fillRect(x * k, y * k, w * k, h * k);
+    for (const [x, y, w, h] of slabsMM) mctx.fillRect(x * k, y * k, w * k, h * k);
     for (const [x, y, w, h, t] of MAP.walls) {   // vents in amber so you can spot grenade routes
       mctx.fillStyle = t === 2 ? '#d9a441' : '#8a8f98';
       mctx.fillRect(x * k, y * k, Math.max(1, w * k), Math.max(1, h * k));

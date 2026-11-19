@@ -10,63 +10,107 @@ let BOT_FILL_MS = 30_000; // wait this long before adding bots
 let log = () => {};
 
 // ---------- Arena ----------
-const MAP = {
-  w: 1280, h: 960,
-  // [x, y, w, h, type] — type 1 = full-height room wall, 2 = vent (a low grated gap at the bottom of a wall:
-  // grenades low enough roll/bounce under it; players, bullets and sight can't pass), 3 = green wood panel
-  // (blocks movement, sight and shots until it's shot or blown apart), otherwise a crate.
-  // Layout: blue home base (west) and red home base (east), each with two offset doorways and short walls in
-  // front of them; a centre gem room with an entrance on every side (north and south ones covered by green
-  // panels); rooms to the north and south; small side rooms off the corridors. Generated and checked (every
-  // spot reachable with panels intact, zero sightlines between the bases, no base can see the gem) by a script.
-  walls: [
-    [0, 0, 1280, 32], [0, 928, 1280, 32], [0, 0, 32, 960], [1248, 0, 32, 960], [256, 32, 32, 144, 1],
-    [256, 276, 32, 408, 1], [256, 784, 32, 144, 1], [992, 32, 32, 268, 1], [992, 400, 32, 160, 1],
-    [992, 660, 32, 268, 1], [336, 150, 32, 60, 1], [336, 210, 32, 32, 2], [336, 242, 32, 58, 1],
-    [336, 660, 32, 150, 1], [912, 270, 32, 150, 1], [912, 540, 32, 60, 1], [912, 600, 32, 32, 2],
-    [912, 632, 32, 58, 1], [496, 352, 40, 32, 1], [536, 352, 32, 32, 2], [568, 352, 40, 32, 1],
-    [608, 360, 64, 16, 3], [672, 352, 112, 32, 1], [496, 576, 112, 32, 1], [608, 584, 64, 16, 3],
-    [672, 576, 32, 32, 2], [704, 576, 80, 32, 1], [496, 384, 32, 64, 1], [496, 512, 32, 16, 1],
-    [496, 528, 32, 32, 2], [496, 560, 32, 16, 1], [752, 384, 32, 64, 1], [752, 512, 32, 64, 1],
-    [432, 208, 48, 32, 1], [540, 208, 60, 32, 1], [600, 208, 32, 32, 2], [632, 208, 108, 32, 1],
-    [740, 216, 60, 16, 3], [800, 208, 48, 32, 1], [432, 32, 32, 64, 1], [432, 156, 32, 52, 1],
-    [816, 32, 32, 88, 1], [816, 180, 32, 28, 1], [432, 720, 48, 32, 1], [480, 728, 60, 16, 3],
-    [540, 720, 40, 32, 1], [580, 720, 32, 32, 2], [612, 720, 128, 32, 1], [800, 720, 48, 32, 1],
-    [432, 752, 32, 48, 1], [432, 860, 32, 68, 1], [816, 752, 32, 28, 1], [816, 840, 32, 88, 1],
-    [288, 320, 12, 32, 1], [352, 320, 80, 32, 1], [400, 320, 32, 100, 1], [288, 608, 12, 32, 1],
-    [352, 608, 80, 32, 1], [400, 516, 32, 124, 1], [848, 320, 52, 32, 1], [952, 320, 40, 32, 1],
-    [848, 320, 32, 100, 1], [848, 608, 52, 32, 1], [900, 616, 52, 16, 3], [952, 608, 40, 32, 1],
-    [848, 516, 32, 124, 1], [560, 96, 48, 48, 0], [690, 820, 48, 48, 0], [96, 440, 64, 80, 0],
-    [1120, 440, 64, 80, 0], [600, 260, 56, 36, 0], [624, 656, 56, 36, 0], [176, 96, 48, 40, 0],
-    [1056, 820, 48, 40, 0], [300, 470, 40, 40, 0], [940, 470, 40, 40, 0],
-  ],
-  // [x, y, yaw] spawns in each home base, facing a doorway (team modes, and the attackers in Extraction)
-  spawns: { A: [[80, 120, 0.9], [80, 840, -0.9], [180, 300, 0.4], [180, 660, -0.4]],
-    B: [[1200, 840, -2.3], [1200, 120, 2.3], [1100, 300, 2.8], [1100, 660, -2.8]] },
-  // Extraction: the gem sits here; defenders spawn around it; attackers deliver it to their own base
-  gem: [640,480],
-  defend: [[560, 420, 0], [720, 420, 3.14], [560, 540, 0], [720, 540, 3.14]],
-  bases: { A: [32, 32, 224, 896], B: [1024, 32, 224, 896] },
-  // Upstairs: two balconies over the corridors north and south of the gem room, `floor` px up (just above
-  // the room walls, so you look over them into the gem room). Low railings (`rail` px) — stand to shoot over
-  // them, crouch to hide. The edge facing the gem room has no railing: walk off it to drop down.
-  // Stairs [x, y, w, h, dir]: a ramp rising toward dir ('N' up = -y, 'S' = +y) to the balcony.
-  upper: {
-    floor: 80, rail: 22,
-    slabs: [[432, 208, 416, 176], [432, 576, 416, 176]],
-    rails: [
-      [432, 208, 208, 6], [704, 208, 144, 6], [432, 208, 6, 176], [842, 208, 6, 176], [432, 378, 96, 6], [752, 378, 96, 6],
-      [432, 746, 144, 6], [640, 746, 208, 6], [432, 576, 6, 176], [842, 576, 6, 176], [432, 576, 96, 6], [752, 576, 96, 6],
+const MAP = (() => {
+  // Two 2-storey buildings, blue (west) and red (east), face each other across an open courtyard with the gem in
+  // the middle. Ground floor: a home base strip at the back, then north / centre / south rooms with doorways
+  // (some covered by green panels) and a door out to the courtyard from each. Upstairs (UP.floor px up) is one big
+  // floor with big gaps in it: look and shoot down through them, drop through, or rappel down (X). Staircases sit
+  // in the corners of the rooms, ladders in the gaps and up the courtyard walls to the upstairs windows.
+  // Walls are [x, y, w, h, type, level]: type 1 = room wall, 2 = vent (a low grated gap at the bottom: grenades
+  // low enough pass under), 3 = green wood panel (breakable), 0 = crate. level 1 = upstairs (stands on the upper floor).
+  // The west building is written out; the east one is its mirror image.
+  const W = 1920, H = 1120;
+  const west = {
+    walls: [
+      // ground floor: wall between the home base and the rooms (doors at y 260-340, 520-600, 780-860)
+      [256, 32, 32, 228, 1], [256, 340, 32, 180, 1], [256, 600, 32, 180, 1], [256, 860, 32, 228, 1],
+      // courtyard wall (doors at y 160-240, 520-600, 880-960; the south one is a green panel)
+      [768, 32, 32, 128, 1], [768, 240, 32, 280, 1], [768, 600, 32, 280, 1], [768, 960, 32, 128, 1], [776, 880, 16, 80, 3],
+      // north room | centre hall wall: doors at x 400-480 and 600-660 (green panel), with a vent
+      [288, 400, 112, 32, 1], [480, 400, 40, 32, 1], [520, 400, 32, 32, 2], [552, 400, 48, 32, 1], [600, 408, 60, 16, 3], [660, 400, 108, 32, 1],
+      // centre hall | south room wall: doors at x 400-480 (green panel) and 600-660
+      [288, 688, 112, 32, 1], [400, 696, 80, 16, 3], [480, 688, 120, 32, 1], [660, 688, 108, 32, 1],
+      // ground-floor crates
+      [120, 300, 48, 48, 0], [120, 780, 48, 48, 0], [480, 180, 56, 40, 0], [560, 880, 56, 40, 0], [520, 540, 40, 40, 0],
+      // upstairs: courtyard wall with three big windows (y 160-320, 480-640, 800-960)
+      [768, 32, 32, 128, 1, 1], [768, 320, 32, 160, 1, 1], [768, 640, 32, 160, 1, 1], [768, 960, 32, 128, 1, 1],
+      // upstairs: wall over the home base (doors at y 212-292 and 828-908)
+      [256, 32, 32, 180, 1, 1], [256, 292, 32, 536, 1, 1], [256, 908, 32, 180, 1, 1],
+      // upstairs cover
+      [480, 320, 48, 32, 0, 1], [600, 760, 48, 32, 0, 1], [140, 250, 40, 40, 0, 1], [140, 830, 40, 40, 0, 1], [700, 520, 32, 48, 0, 1],
     ],
-    stairs: [[640, 64, 64, 144, 'S'], [576, 752, 64, 144, 'N']],
-  },
-  // Extraction: knocked-out defenders come back after 10 s in a far back corner of their own base
-  respawn: { A: [[60, 64, 0.6], [60, 896, -0.6]], B: [[1220, 896, -2.5], [1220, 64, 2.5]] },
-};
+    floor: [32, 32, 768, 1056],
+    // gaps in the upper floor
+    holes: [[400, 480, 256, 160], [420, 140, 160, 120], [460, 840, 160, 120], [112, 480, 96, 160]],
+    // ramps [x, y, w, h, dir] rising toward dir to the upper floor (each has a stairwell gap above it)
+    stairs: [[296, 40, 56, 160, 'N'], [632, 40, 56, 160, 'N'], [296, 920, 56, 160, 'S'], [632, 920, 56, 160, 'S']],
+    // ladders [x, y, w, h, dir]: stand in it and walk toward dir to climb, away from it to climb down
+    ladders: [[500, 480, 40, 18, 'N'], [480, 242, 40, 18, 'S'], [520, 840, 40, 18, 'N'], [140, 480, 40, 18, 'N'],
+      [800, 240, 18, 40, 'W'], [800, 840, 18, 40, 'W']],
+  };
+  const flip = r => [W - r[0] - r[2], r[1], r[2], r[3], ...r.slice(4)];
+  const flipDir = r => { const f = flip(r); f[4] = { W: 'E', E: 'W' }[f[4]] || f[4]; return f; };
+  const courtyard = [   // open courtyard between the buildings (crates for cover; the gem in the middle)
+    [880, 180, 48, 48, 0], [992, 180, 48, 48, 0], [930, 380, 60, 28, 0], [930, 712, 60, 28, 0],
+    [860, 540, 32, 40, 0], [1028, 540, 32, 40, 0], [880, 890, 48, 48, 0], [992, 890, 48, 48, 0],
+  ];
+  const spawnsA = [[80, 120, 0.6], [80, 1000, -0.6], [200, 290, 0.3], [200, 830, -0.3]];
+  const flipSpot = ([x, y, a]) => [W - x, y, Math.round((Math.PI - a) * 100) / 100];
+  return {
+    w: W, h: H,
+    walls: [[0, 0, W, 32], [0, H - 32, W, 32], [0, 0, 32, H], [W - 32, 0, 32, H],
+      ...west.walls, ...west.walls.map(flip), ...courtyard],
+    // [x, y, yaw] spawns in each home base (team modes, and the attackers in Extraction)
+    spawns: { A: spawnsA, B: spawnsA.map(flipSpot) },
+    // Extraction: the gem sits here; defenders spawn around it; attackers deliver it to their own base
+    gem: [960, 560],
+    defend: [[900, 470, 0], [1020, 470, 3.14], [900, 650, 0], [1020, 650, 3.14]],
+    bases: { A: [32, 32, 224, H - 64], B: [W - 256, 32, 224, H - 64] },
+    upper: {
+      floor: 80, rail: 22, rails: [],
+      floors: [west.floor, flip(west.floor)],
+      holes: [...west.holes, ...west.holes.map(flip)],
+      stairs: [...west.stairs, ...west.stairs.map(flipDir)],
+      ladders: [...west.ladders, ...west.ladders.map(flipDir)],
+    },
+    // Extraction: knocked-out defenders come back after 10 s in a far back corner of their own base
+    respawn: { A: [[60, 64, 0.6], [60, H - 64, -0.6]], B: [[W - 60, H - 64, -2.5], [W - 60, 64, 2.5]] },
+  };
+})();
 const UP = MAP.upper;
 const inRect = (r, x, y) => x >= r[0] && x <= r[0] + r[2] && y >= r[1] && y <= r[1] + r[3];
-// how tall each wall is: the outer border blocks everything, crates are 62 px, room walls/vents/panels 77 px
-const wallTop = i => (i < 4 ? 9999 : MAP.walls[i][4] ? 77 : 62);
+const inOpen = (r, x, y) => x > r[0] && x < r[0] + r[2] && y > r[1] && y < r[1] + r[3];
+// is there upper floor at (x, y)? (inside a building, not over a gap or a stairwell)
+const onSlab = (x, y) => UP.floors.some(f => inRect(f, x, y)) && !UP.holes.some(h => inOpen(h, x, y)) && !UP.stairs.some(s => inOpen(s, x, y));
+// the upper floor as rectangles (for drawing it)
+function slabRects() {
+  const xs = new Set(), ys = new Set();
+  for (const r of [...UP.floors, ...UP.holes, ...UP.stairs]) { xs.add(r[0]); xs.add(r[0] + r[2]); ys.add(r[1]); ys.add(r[1] + r[3]); }
+  const X = [...xs].sort((a, b) => a - b), Y = [...ys].sort((a, b) => a - b), out = [];
+  for (let j = 0; j < Y.length - 1; j++) {
+    let run = null;
+    for (let i = 0; i < X.length - 1; i++) {
+      const on = onSlab((X[i] + X[i + 1]) / 2, (Y[j] + Y[j + 1]) / 2);
+      if (on && run) run[2] = X[i + 1] - run[0];
+      else if (on) run = [X[i], Y[j], X[i + 1] - X[i], Y[j + 1] - Y[j]];
+      if ((!on || i === X.length - 2) && run) { out.push(run); run = null; }
+    }
+  }
+  // merge rows with the same x span
+  const merged = [];
+  for (const r of out) { const m = merged.find(o => o[0] === r[0] && o[2] === r[2] && o[1] + o[3] === r[1]); if (m) m[3] += r[3]; else merged.push(r.slice()); }
+  return merged;
+}
+const DIRS = { N: [0, -1], S: [0, 1], W: [-1, 0], E: [1, 0] };
+// the ladder at (x, y) as its climbing direction, or null
+function ladderAt(x, y) {
+  for (const l of UP.ladders) if (inRect(l, x, y)) return DIRS[l[4]];
+  return null;
+}
+// how tall each wall is: the outer border blocks everything, crates are 62 px, room walls/vents/panels 77 px;
+// upstairs walls start at the upper floor
+const wallBot = i => (MAP.walls[i][5] ? UP.floor : 0);
+const wallTop = i => (i < 4 ? 9999 : wallBot(i) + (MAP.walls[i][4] ? 77 : 62));
 // height of a stair ramp under (x, y), or -1 if not on stairs
 function rampAt(x, y) {
   for (const [sx, sy, sw, sh, dir] of UP.stairs) {
@@ -81,7 +125,7 @@ function supportAt(x, y, z) {
   let h = 0;
   const r = rampAt(x, y);
   if (r >= 0 && r <= z + 14) h = Math.max(h, r);
-  if (z >= UP.floor - 14 && UP.slabs.some(sl => inRect(sl, x, y))) h = Math.max(h, UP.floor);
+  if (z >= UP.floor - 14 && onSlab(x, y)) h = Math.max(h, UP.floor);
   return h;
 }
 
@@ -108,6 +152,7 @@ const P = {
   // Leaning (only while aiming) moves your eye and gun leanPx to the side, so you can shoot around a corner
   // while staying mostly behind it.
   adsSpeed: 1, leanPx: 11,
+  climb: 1.6, rapSpeed: 1.3,   // ladder climbing and rappelling speed (px per tick)
   // Green wood panels: hp each; guns fire at a panel under the crosshair within panelRange px; grenades
   // blasts damage them too (x panelBlast)
   panelHp: 160, panelRange: 220, panelBlast: 1.5,
@@ -170,14 +215,14 @@ function setBroken(set) { curBroken = set; }
 // something solid at (x, y) for a body standing at height z: walls you're below the top of, railings when
 // you're up on a balcony. blocked() is the ground-level version.
 function blockedAt(x, y, r, z) {
-  for (let i = 0; i < MAP.walls.length; i++) if (wallOn(i) && z < wallTop(i) && rectHitsCircle(MAP.walls[i], x, y, r)) return true;
+  for (let i = 0; i < MAP.walls.length; i++) if (wallOn(i) && z < wallTop(i) && z + 30 > wallBot(i) && rectHitsCircle(MAP.walls[i], x, y, r)) return true;
   if (z >= UP.floor - 4) for (const rl of UP.rails) if (rectHitsCircle(rl, x, y, r)) return true;
   return false;
 }
 const blocked = (x, y, r) => blockedAt(x, y, r, 0);
 // for grenades: vents (type 2) only block what's above vent height
 const gBlocked = (x, y, r, z) => {
-  for (let i = 0; i < MAP.walls.length; i++) { const w = MAP.walls[i]; if (wallOn(i) && z < wallTop(i) && !(w[4] === 2 && z < P.ventH) && rectHitsCircle(w, x, y, r)) return true; }
+  for (let i = 0; i < MAP.walls.length; i++) { const w = MAP.walls[i]; if (wallOn(i) && z < wallTop(i) && z >= wallBot(i) && !(w[4] === 2 && z < P.ventH) && rectHitsCircle(w, x, y, r)) return true; }
   if (z >= UP.floor && z < UP.floor + UP.rail) for (const rl of UP.rails) if (rectHitsCircle(rl, x, y, r)) return true;
   return false;
 };
@@ -196,7 +241,7 @@ function clear3(x1, y1, z1, x2, y2, z2) {
   for (let i = 0; i < MAP.walls.length; i++) {
     if (!wallOn(i)) continue;
     const w = MAP.walls[i], sp = span(w[0], w[1], w[2], w[3]);
-    if (sp && Math.min(z1 + dz * sp[0], z1 + dz * sp[1]) < wallTop(i)) return false;
+    if (sp && Math.min(z1 + dz * sp[0], z1 + dz * sp[1]) < wallTop(i) && Math.max(z1 + dz * sp[0], z1 + dz * sp[1]) > wallBot(i)) return false;
   }
   for (const rl of UP.rails) {
     const sp = span(rl[0], rl[1], rl[2], rl[3]);
@@ -206,7 +251,7 @@ function clear3(x1, y1, z1, x2, y2, z2) {
   }
   if ((z1 - UP.floor) * (z2 - UP.floor) < 0) {   // passes through the balcony floor level
     const t = (UP.floor - z1) / dz, px = x1 + dx * t, py = y1 + dy * t;
-    if (UP.slabs.some(sl => inRect(sl, px, py))) return false;
+    if (onSlab(px, py)) return false;
   }
   return true;
 }
@@ -218,7 +263,7 @@ function lineOfSight(ax, ay, bx, by, az = 33, bz = 33) { return clear3(ax, ay, a
 const CELL = 16, GW = MAP.w / CELL, GH = MAP.h / CELL;
 const navBlocked = Array.from({ length: GW * GH }, (_, i) => {
   const x = (i % GW) * CELL + CELL / 2, y = Math.floor(i / GW) * CELL + CELL / 2;
-  return blocked(x, y, P.r + 2) || UP.stairs.some(st => inRect([st[0] - 14, st[1] - 14, st[2] + 28, st[3] + 28], x, y));
+  return blocked(x, y, P.r + 2) || [...UP.stairs, ...UP.ladders].some(st => inRect([st[0] - 14, st[1] - 14, st[2] + 28, st[3] + 28], x, y));
 });
 const cellOf = (x, y) => Math.max(0, Math.min(GW - 1, Math.floor(x / CELL))) + Math.max(0, Math.min(GH - 1, Math.floor(y / CELL))) * GW;
 
@@ -384,7 +429,7 @@ function resetRound(m) {
     const spots = defending ? MAP.defend : MAP.spawns[p.team];
     const [x, y, yaw] = spots[idx[p.team]++ % spots.length];   // attackers: home base facing a doorway; defenders: around the gem
     Object.assign(p, { x, y, hp: P.hp, alive: true, cool: 0, yaw, pitch: 0, burst: 0, sinceShot: 99,
-      stance: 'stand', running: false, slideT: 0, slideCd: 0, cd: { boom: 0, frag: 0, therm: 0 }, throws: [], switchT: 0, cool: 0, z: 0, vz: 0, respawnT: 0 });
+      stance: 'stand', running: false, slideT: 0, slideCd: 0, cd: { boom: 0, frag: 0, therm: 0 }, throws: [], switchT: 0, cool: 0, z: 0, vz: 0, respawnT: 0, rap: null, onLadder: false });
     p.input = { f: 0, s: 0, yaw, pitch: 0, run: false, crouch: false };
     p.brain.path = []; p.brain.repath = 0; p.brain.guard = null;
   }
@@ -426,7 +471,35 @@ function stepMovement(p, mx, my, run, crouch, runOk, canMove, ads = false) {
     } else p.stance = 'crouch';
   } else p.stance = 'stand';
   p.running = p.stance === 'stand' && run && runOk && len > 0;
+  // Rappel (X): at the edge of a gap in the upper floor, clip on and lower yourself down slowly. You can aim
+  // and shoot on the way down; X again lets go (you drop).
+  if (p.wantRap) { p.wantRap = false; if (p.rap) p.rap = null; else if (canMove) startRappel(p); }
+  if (p.rap) {
+    p.running = false; if (p.stance === 'slide') p.stance = 'stand';
+    const r = p.rap;
+    if (!r.over) {   // step out over the edge first
+      const d = Math.hypot(r.x - p.x, r.y - p.y);
+      if (d <= 2) { p.x = r.x; p.y = r.y; r.over = true; } else { p.x += (r.x - p.x) / d * 2; p.y += (r.y - p.y) / d * 2; }
+      return;
+    }
+    const z = p.z || 0, sup = supportAt(p.x, p.y, z);
+    p.z = Math.max(sup, z - P.rapSpeed); p.vz = 0;
+    if (p.z <= sup) p.rap = null;
+    return;
+  }
   if (!canMove) { settle(p); return; }
+  // Ladders: walk toward the wall/floor edge to climb, away from it to climb down
+  const lad = !p.bot && ladderAt(p.x, p.y);
+  p.onLadder = false;
+  if (lad) {
+    const z = p.z || 0, sup = supportAt(p.x, p.y, z), dot = len ? (mx * lad[0] + my * lad[1]) / len : 0;
+    if (z > sup + 0.5) {   // on the ladder
+      p.stance = 'stand'; p.running = false; p.onLadder = true; p.vz = 0;
+      if (dot > 0.3) p.z = Math.min(UP.floor, z + P.climb);
+      else if (dot < -0.3) p.z = Math.max(sup, z - P.climb);
+      if (!(p.z >= UP.floor && dot > 0.3)) return;   // at the top, keep going forward onto the floor
+    } else if (dot > 0.3 && z < UP.floor - 1) { p.z = z + P.climb; p.vz = 0; p.stance = 'stand'; p.running = false; p.onLadder = true; return; }
+  }
   let dx, dy, spd;
   if (p.stance === 'slide') {
     const k = p.slideT / P.slideTicks;               // slows down over the slide
@@ -448,10 +521,31 @@ function stepMovement(p, mx, my, run, crouch, runOk, canMove, ads = false) {
 function settle(p) {
   const z = p.z || 0, sup = supportAt(p.x, p.y, z);
   if (sup >= z - 2) { p.z = sup; p.vz = 0; return; }
+  if (!p.bot && ladderAt(p.x, p.y)) { p.vz = 0; return; }   // holding on to a ladder
   p.vz = (p.vz || 0) - 0.6; p.z = z + p.vz;
   if (p.z <= sup) { p.z = sup; p.vz = 0; }
   unstick(p);
 }
+// Rappel from where you stand on the upper floor: look toward a gap within reach (no wall in between).
+// Returns the spot just past the edge to hang from, or null.
+function rappelSpot(p) {
+  const z = p.z || 0;
+  if (p.bot || z < UP.floor - 1 || p.rap) return null;
+  const dx = Math.cos(p.yaw || 0), dy = Math.sin(p.yaw || 0);
+  for (let d = 4; d <= 48; d += 4) {
+    const x = p.x + dx * d, y = p.y + dy * d;
+    if (blockedAt(x, y, 4, z)) return null;
+    if (supportAt(x, y, z) < z - 2) {   // no floor here: hang just past the edge, clear of walls all the way down
+      for (let t = d + 12; t <= d + 40; t += 4) {
+        const tx = p.x + dx * t, ty = p.y + dy * t;
+        if (supportAt(tx, ty, z) < z - 2 && !blockedAt(tx, ty, P.r, z) && !blockedAt(tx, ty, P.r, 40) && !blockedAt(tx, ty, P.r, 0)) return [tx, ty];
+      }
+      return null;
+    }
+  }
+  return null;
+}
+function startRappel(p) { const s = rappelSpot(p); if (s) p.rap = { x: s[0], y: s[1], over: false }; }
 // after a drop you can land overlapping the wall under the balcony edge: nudge to the nearest clear spot
 function unstick(p) {
   if (!blockedAt(p.x, p.y, P.r, p.z)) return;
@@ -759,7 +853,7 @@ function stepThrown(m, pr) {
   const z0 = pr.z;
   pr.x = nx; pr.y = ny; pr.z += pr.vz;
   // the underside of a balcony: bounce back down
-  if (z0 < UP.floor && pr.z >= UP.floor - 1 && UP.slabs.some(sl => inRect(sl, pr.x, pr.y))) { pr.z = UP.floor - 2; pr.vz = -Math.abs(pr.vz) * 0.5; }
+  if (z0 < UP.floor && pr.z >= UP.floor - 1 && onSlab(pr.x, pr.y)) { pr.z = UP.floor - 2; pr.vz = -Math.abs(pr.vz) * 0.5; }
   const ground = supportAt(pr.x, pr.y, z0);   // floor, stair or balcony under it
   let landed = false;
   if (pr.z <= ground) {
@@ -883,6 +977,8 @@ function handlePlay(client, msg) {
         weapon: WEAPONS[msg.weapon] ? msg.weapon : p.input.weapon || p.weapon };
       // where the player's own computer has them (it moves instantly); used if it's close to ours
       if (Number.isFinite(+msg.x) && Number.isFinite(+msg.y)) p.claim = [+msg.x, +msg.y];
+      const rap = +msg.rap || 0;
+      if (rap > (p.rapSeen || 0)) { p.rapSeen = rap; p.wantRap = true; }
     }
     else if (KIND_CODE[msg.g] != null && p.throws.length < 3) { p.input.yaw = yaw; p.input.pitch = pitch; p.throws.push(msg.g); }   // queued, so two quick throws both happen
   }
@@ -893,7 +989,7 @@ function respawnDefender(m, p) {
   const atk = m.players.filter(o => o.alive && o.team === m.attack);
   const spots = MAP.respawn[p.team];
   const far = spots.reduce((a, s) => (Math.min(...atk.map(o => Math.hypot(o.x - s[0], o.y - s[1])), 1e9) > Math.min(...atk.map(o => Math.hypot(o.x - a[0], o.y - a[1])), 1e9) ? s : a));
-  Object.assign(p, { x: far[0], y: far[1], yaw: far[2], pitch: 0, z: 0, vz: 0, hp: P.hp, alive: true, cool: 0, burst: 0, stance: 'stand',
+  Object.assign(p, { rap: null, onLadder: false, x: far[0], y: far[1], yaw: far[2], pitch: 0, z: 0, vz: 0, hp: P.hp, alive: true, cool: 0, burst: 0, stance: 'stand',
     running: false, slideT: 0, switchT: 0, respawnT: 0 });
   p.input = Object.assign({}, p.input, { yaw: far[2], pitch: 0 });
   p.brain.path = []; p.brain.repath = 0; p.brain.guard = null;
@@ -980,7 +1076,7 @@ function stepMatch(m) {
     // peeking a corner counts the moment they see around it (instead of a moment later on the server).
     if (p.claim) {
       const [cx, cy] = p.claim; p.claim = null;
-      if (m.phase !== 'countdown' && Math.hypot(cx - p.x, cy - p.y) < P.claimMax && !blocked(cx, cy, P.r)) { p.x = cx; p.y = cy; }
+      if (m.phase !== 'countdown' && !p.rap && !p.onLadder && Math.hypot(cx - p.x, cy - p.y) < P.claimMax && !blockedAt(cx, cy, P.r, p.z || 0) && supportAt(cx, cy, p.z || 0) >= (p.z || 0) - 2) { p.x = cx; p.y = cy; }
     }
     if (m.phase === 'fight') for (const w of wants) throwGrenade(m, p, w);
 
@@ -1042,7 +1138,7 @@ function stepMatch(m) {
       ex: g ? { attack: m.attack, gem: [{ home: 0, carried: 1, dropped: 2 }[g.state], Math.round(g.x), Math.round(g.y), g.carrier, Math.round(g.prog / EXTRACT.extractTicks * 100)],
         time: Math.max(0, Math.ceil(m.timeLeft / 60)) } : null,
       players: m.players.map(p => [p.id, r1(p.x), r1(p.y), p.hp, p.alive ? 1 : 0, r3(p.yaw), r3(p.pitch), p.kills,
-        STANCE_CODE[p.stance] + (p.running ? 4 : 0) + (p.ads ? 8 : 0) + (p.lean < 0 ? 16 : p.lean > 0 ? 32 : 0), Math.ceil(p.cd.boom / 6), Math.ceil(p.cd.frag / 6), Math.ceil(p.cd.therm / 6), WEAPONS[p.weapon || 'rifle'].code + (p.switchT > 0 ? 2 : 0), r1(p.z || 0), p.alive ? 0 : Math.ceil((p.respawnT || 0) / 60)]),
+        STANCE_CODE[p.stance] + (p.running ? 4 : 0) + (p.ads ? 8 : 0) + (p.lean < 0 ? 16 : p.lean > 0 ? 32 : 0) + (p.rap ? 64 : 0) + (p.onLadder ? 128 : 0), Math.ceil(p.cd.boom / 6), Math.ceil(p.cd.frag / 6), Math.ceil(p.cd.therm / 6), WEAPONS[p.weapon || 'rifle'].code + (p.switchT > 0 ? 2 : 0), r1(p.z || 0), p.alive ? 0 : Math.ceil((p.respawnT || 0) / 60)]),
       proj: m.projectiles.map(pr => [pr.id, KIND_CODE[pr.kind], r1(pr.x), r1(pr.y), r1(pr.z), pr.team]),
       fires: m.fires.map(f => [f.id, Math.round(f.x1), Math.round(f.y1), Math.round(f.x2), Math.round(f.y2), f.t, f.team, Math.round(f.z || 0)]),
       ev: m.events };
@@ -1123,5 +1219,5 @@ function start(opts = {}) {
   runClock(tick);
 }
 
-return { connect, start, tick, matchmake, createPractice, MAP, P, LOOK_SIZES, STANCES, KINDS, recoilKick, blocked, lineOfSight, stepMovement, castRay, predictThrow, segmentClear, eyePos, setBroken, panelUnder, EXTRACT, MODES, clear3, supportAt, blockedAt, _matches: matches, WEAPONS, WEAPON_BY_CODE, weaponDamage, weaponKick, get botFillMs() { return BOT_FILL_MS; } };
+return { slabRects, onSlab, ladderAt, rappelSpot, connect, start, tick, matchmake, createPractice, MAP, P, LOOK_SIZES, STANCES, KINDS, recoilKick, blocked, lineOfSight, stepMovement, castRay, predictThrow, segmentClear, eyePos, setBroken, panelUnder, EXTRACT, MODES, clear3, supportAt, blockedAt, _matches: matches, WEAPONS, WEAPON_BY_CODE, weaponDamage, weaponKick, get botFillMs() { return BOT_FILL_MS; } };
 });
