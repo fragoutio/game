@@ -643,6 +643,7 @@
     if (ui === 'game' || ui === 'practice') {
       if (e.code === 'Escape') back();
       else if (e.code === 'KeyT' && !e.repeat) switchOptic();
+      else if (e.code === 'ShiftRight' && !e.repeat) { if (me.ads) { lowerSight(); sfx.move(); } else sightKey(0); }   // right Shift: zoom in / out
       else if (e.code === 'KeyX' && !e.repeat) { me.rapN = (me.rapN || 0) + 1; me.wantRap = true; }
       else if (GREN_KEYS[e.code] && !e.repeat) startAim(GREN_KEYS[e.code]);
       else if ((e.code === 'KeyQ' || e.code === 'KeyE') && !e.repeat) sightKey(e.code === 'KeyQ' ? -1 : 1);
@@ -999,7 +1000,7 @@
     me.yaw = Math.atan2(Math.sin(me.yaw), Math.cos(me.yaw));
     const run = playing && ((sprintLatch && k('KeyW')) || !!(pad && pad.run));
     // Shift or C: crouch, or slide if you're running. (Not Ctrl: Ctrl+W closes the browser tab.)
-    const crouch = playing && (k('ShiftLeft') || k('ShiftRight') || k('KeyC') || !!(pad && pad.crouch));
+    const crouch = playing && (k('ShiftLeft') || k('KeyC') || !!(pad && pad.crouch));   // right Shift is the zoom key
     return { f: Math.max(-1, Math.min(1, f)), s: Math.max(-1, Math.min(1, s)), run, crouch };
   }
   // predict your own movement with the exact same 60 Hz steps and stance rules the server uses
