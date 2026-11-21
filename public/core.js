@@ -122,6 +122,15 @@ function rampAt(x, y) {
   }
   return -1;
 }
+// Staircases are solid blocks under their steps: a body at height z can't overlap a part of the stairs more than a
+// step (14 px) above its feet (so you can't walk into the side of a staircase or under its high end)
+function stairBlocks(x, y, z) {
+  for (let a = -1; a < 8; a++) {
+    const sx = a < 0 ? x : x + Math.cos(a * Math.PI / 4) * (P.r - 2), sy = a < 0 ? y : y + Math.sin(a * Math.PI / 4) * (P.r - 2);
+    if (rampAt(sx, sy) > z + 14) return true;
+  }
+  return false;
+}
 // what you'd stand on at (x, y) coming from height z: the ground, a stair, or a balcony (only if you're up there)
 function supportAt(x, y, z) {
   let h = 0;
@@ -252,6 +261,14 @@ function clear3(x1, y1, z1, x2, y2, z2) {
     if (!sp) continue;
     const za = z1 + dz * sp[0], zb = z1 + dz * sp[1];
     if (Math.min(za, zb) < UP.floor + UP.rail && Math.max(za, zb) > UP.floor) return false;
+  }
+  for (const st of UP.stairs) {   // under the steps of a staircase is solid
+    const sp = span(st[0], st[1], st[2], st[3]);
+    if (!sp) continue;
+    for (let k = 0; k <= 6; k++) {
+      const t = sp[0] + (sp[1] - sp[0]) * k / 6, px = x1 + dx * t, py = y1 + dy * t, pz = z1 + dz * t;
+      if (pz < rampAt(px, py) - 1) return false;
+    }
   }
   if ((z1 - UP.floor) * (z2 - UP.floor) < 0) {   // passes through the balcony floor level
     const t = (UP.floor - z1) / dz, px = x1 + dx * t, py = y1 + dy * t;
@@ -493,8 +510,17 @@ function stepMovement(p, mx, my, run, crouch, runOk, canMove, ads = false) {
     return;
   }
   if (!canMove) { settle(p); return; }
-  // Ladders: walk toward the wall/floor edge to climb, away from it to climb down
-  const lad = !p.bot && ladderAt(p.x, p.y);
+  // Ladders: walk toward the wall/floor edge to climb, away from it to climb down. Space lets go (you drop).
+  if (p.dropT > 0) p.dropT--;
+  if (p.wantDrop) {
+    p.wantDrop = false;
+    const l = ladderAt(p.x, p.y);
+    if (l && (p.z || 0) > supportAt(p.x, p.y, p.z || 0) + 0.5) {
+      p.dropT = 30; p.onLadder = false;
+      for (const d of [14, 8, 4]) { const nx = p.x - l[0] * d, ny = p.y - l[1] * d; if (!blockedAt(nx, ny, P.r, p.z || 0) && !stairBlocks(nx, ny, p.z || 0)) { p.x = nx; p.y = ny; break; } }   // push off the ladder
+    }
+  }
+  const lad = !p.bot && !(p.dropT > 0) && ladderAt(p.x, p.y);
   p.onLadder = false;
   if (lad) {
     const z = p.z || 0, sup = supportAt(p.x, p.y, z), dot = len ? (mx * lad[0] + my * lad[1]) / len : 0;
@@ -511,12 +537,12 @@ function stepMovement(p, mx, my, run, crouch, runOk, canMove, ads = false) {
     spd = P.crouchSpeed + (P.slideSpeed - P.crouchSpeed) * k;
     dx = p.slideX; dy = p.slideY;
   } else {
-    if (!len) return;
+    if (!len) { settle(p); return; }   // standing still: still fall if there's nothing under you (e.g. let go of a ladder)
     spd = (p.running ? P.run : p.stance === 'crouch' ? P.crouchSpeed : P.walk) * (ads ? P.adsSpeed : 1);
     dx = mx / len; dy = my / len;
   }
   const ox = p.x, oy = p.y, z = p.z || 0;
-  const ok = (x, y) => !blockedAt(x, y, P.r, z) && supportAt(x, y, z) <= z + 14;   // no wall, no step too high
+  const ok = (x, y) => !blockedAt(x, y, P.r, z) && supportAt(x, y, z) <= z + 14 && !stairBlocks(x, y, z);   // no wall, no step too high, not into a staircase
   if (ok(p.x + dx * spd, p.y)) p.x += dx * spd;
   if (ok(p.x, p.y + dy * spd)) p.y += dy * spd;
   if (p.stance === 'slide' && p.x === ox && p.y === oy) p.slideT = Math.min(p.slideT, 1);   // slid into a wall
@@ -526,7 +552,7 @@ function stepMovement(p, mx, my, run, crouch, runOk, canMove, ads = false) {
 function settle(p) {
   const z = p.z || 0, sup = supportAt(p.x, p.y, z);
   if (sup >= z - 2) { p.z = sup; p.vz = 0; return; }
-  if (!p.bot && ladderAt(p.x, p.y)) { p.vz = 0; return; }   // holding on to a ladder
+  if (!p.bot && !(p.dropT > 0) && ladderAt(p.x, p.y)) { p.vz = 0; return; }   // holding on to a ladder (unless you just let go)
   p.vz = (p.vz || 0) - 0.6; p.z = z + p.vz;
   if (p.z <= sup) { p.z = sup; p.vz = 0; }
   unstick(p);
@@ -1087,6 +1113,8 @@ function handlePlay(client, msg) {
       if (Number.isFinite(+msg.x) && Number.isFinite(+msg.y)) p.claim = [+msg.x, +msg.y];
       const rap = +msg.rap || 0;
       if (rap > (p.rapSeen || 0)) { p.rapSeen = rap; p.wantRap = true; }
+      const drop = +msg.drop || 0;
+      if (drop > (p.dropSeen || 0)) { p.dropSeen = drop; p.wantDrop = true; }
     }
     else if (KIND_CODE[msg.g] != null && p.throws.length < 3) { p.input.yaw = yaw; p.input.pitch = pitch; p.throws.push(msg.g); }   // queued, so two quick throws both happen
   }

@@ -648,7 +648,7 @@
       else if (e.code === 'KeyX' && !e.repeat) { me.rapN = (me.rapN || 0) + 1; me.wantRap = true; }
       else if (GREN_KEYS[e.code] && !e.repeat) startAim(GREN_KEYS[e.code]);
       else if ((e.code === 'KeyQ' || e.code === 'KeyE') && !e.repeat) sightKey(e.code === 'KeyQ' ? -1 : 1);
-      else if (e.code === 'Space') lowerSight();
+      else if (e.code === 'Space') { if (me.onLadder) { me.dropN = (me.dropN || 0) + 1; me.wantDrop = true; } else lowerSight(); }   // Space: let go of a ladder, or lower the sight
       else if (e.code === 'Digit1' || e.code === 'Numpad1') pickWeapon('rifle');
       else if (e.code === 'Digit2' || e.code === 'Numpad2') pickWeapon('shotgun');
       return;
@@ -1026,7 +1026,7 @@
   function sendInput(now) {
     if (now - lastInput < 33) return;
     lastInput = now;
-    sendPlay({ t: 'input', weapon: me.weapon || 'rifle', f: lastMove.f, s: lastMove.s, run: lastMove.run, crouch: lastMove.crouch, ads: !!me.ads, lean: me.lean || 0, rap: me.rapN || 0, x: Math.round(me.x * 10) / 10, y: Math.round(me.y * 10) / 10, yaw: Math.round(me.yaw * 1000) / 1000, pitch: Math.round(me.pitch * 1000) / 1000 });
+    sendPlay({ t: 'input', weapon: me.weapon || 'rifle', f: lastMove.f, s: lastMove.s, run: lastMove.run, crouch: lastMove.crouch, ads: !!me.ads, lean: me.lean || 0, rap: me.rapN || 0, drop: me.dropN || 0, x: Math.round(me.x * 10) / 10, y: Math.round(me.y * 10) / 10, yaw: Math.round(me.yaw * 1000) / 1000, pitch: Math.round(me.pitch * 1000) / 1000 });
   }
 
   // what's under the centre crosshair? Same test as the server (core.castRay): body height depends on
@@ -1524,7 +1524,7 @@
     const tip = $('move-tip');
     if (me.alive && (ui === 'game' || ui === 'practice')) {
       const lad = Core.ladderAt(me.x, me.y);
-      tip.textContent = me.rap ? 'RAPPELLING · X LET GO' : Core.rappelSpot(me) ? 'X  RAPPEL DOWN' : lad ? (me.onLadder ? 'W / S  CLIMB' : 'W  CLIMB LADDER') : '';
+      tip.textContent = me.rap ? 'RAPPELLING · X LET GO' : Core.rappelSpot(me) ? 'X  RAPPEL DOWN' : lad ? (me.onLadder ? 'W / S  CLIMB · SPACE  LET GO' : 'W  CLIMB LADDER') : '';
       tip.hidden = !tip.textContent;
     } else tip.hidden = true;
 
