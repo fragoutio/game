@@ -223,7 +223,7 @@ const OPS = {
     tac: { name: 'PATCH', cd: 22, desc: 'Heal you and nearby teammates 2 health' },
     ult: { name: 'REBOOT', charge: 120, desc: 'Bring every knocked-out teammate back, right next to you' } },
   warden: { name: 'WARDEN', cls: 'CONTROLLER', color: '#c58bff',
-    tac: { name: 'BARRIER', cd: 12, charges: 3, desc: 'Place a wall (3 charges). Your team shoots through it; enemies need 9 hits to break it' },
+    tac: { name: 'BARRIER', cd: 12, charges: 3, desc: 'Place a wall (3 charges). Your team shoots through it; enemies need 9 hits to break it. Face your wall up close and press Space again to mantle over it' },
     ult: { name: 'SPIKE TRAP', charge: 110, desc: 'Drop a trap on the floor (or the ceiling above you): an enemy who walks over or under it loses 80% of their health' } },
 };
 const OP_LIST = Object.keys(OPS);
@@ -578,7 +578,8 @@ function stepMovement(p, mx, my, run, crouch, runOk, canMove, ads = false) {
   // Blink (VOLT): a quick dash, stopped by walls
   if (p.dashT > 0 && p.dashTo) {   // flies straight to the landing spot (through walls)
     p.x += (p.dashTo[0] - p.x) / p.dashT; p.y += (p.dashTo[1] - p.y) / p.dashT;
-    if (--p.dashT <= 0) { p.x = p.dashTo[0]; p.y = p.dashTo[1]; p.dashTo = null; settle(p); }
+    if (p.vault) p.z = p.vaultZ + Math.sin((1 - (p.dashT - 1) / p.vault) * Math.PI) * 30;   // up and over
+    if (--p.dashT <= 0) { p.x = p.dashTo[0]; p.y = p.dashTo[1]; p.dashTo = null; if (p.vault) { p.z = p.vaultZ; p.vault = 0; } settle(p); }
     return;
   }
   // Ladders: walk toward the wall/floor edge to climb, away from it to climb down. Space lets go (you drop).
@@ -1325,9 +1326,27 @@ function startDash(p, mx, my) {
   p.dashT = 8; p.dashTo = [p.x + dx * d, p.y + dy * d]; p.rap = null;
   return true;
 }
+// WARDEN mantle: standing right in front of one of your team's barriers and facing it, Space vaults over it.
+// Returns the landing spot on the far side, or null.
+function mantleSpot(p, team) {
+  if (!curWalls || p.dashT > 0) return null;
+  const fx = Math.cos(p.yaw || 0), fy = Math.sin(p.yaw || 0), z = p.z || 0;
+  for (const w of curWalls) {
+    if (w.team !== team || Math.abs(w.z - z) > 20 || segDist(p.x, p.y, w) > P.r + 18) continue;
+    const t = segCross(p.x, p.y, p.x + fx * 60, p.y + fy * 60, w);
+    if (t < 0) continue;
+    for (const extra of [P.r + 10, P.r + 18, P.r + 28]) {
+      const d = t * 60 + extra, x = p.x + fx * d, y = p.y + fy * d;
+      if (!blockedAt(x, y, P.r, z) && !stairBlocks(x, y, z) && supportAt(x, y, z) <= z + 14 && supportAt(x, y, z) >= z - 2) return [x, y];
+    }
+  }
+  return null;
+}
+function startMantle(p, spot) { p.dashT = 14; p.dashTo = spot; p.vaultZ = p.z || 0; p.vault = 14; p.rap = null; p.stance = 'stand'; }
 function useTac(m, p, mx, my) {
   const op = OPS[p.op];
   if (!op || !p.alive) return;
+  if (p.op === 'warden') { const sp = mantleSpot(p, p.team); if (sp) { startMantle(p, sp); m.events.push(['mt', p.id]); return; } }   // vault over your barrier (no charge used)
   if (op.tac.charges) { if (!(p.tacCh > 0)) return; p.tacCh--; if (p.tac <= 0) p.tac = op.tac.cd * 60; }
   else { if (p.tac > 0) return; p.tac = op.tac.cd * 60; }
   const enemies = m.players.filter(o => o.alive && o.team !== p.team);
@@ -1617,5 +1636,5 @@ function start(opts = {}) {
 
 // identifies the map, so a client only plays on a server with the same one
 const MAP_ID = MAP.w + 'x' + MAP.h + '-' + MAP.walls.length + '-' + UP.ladders.length;
-return { OPS, OP_LIST, setZones, setWalls, setLosTeam, BARRIER_H, startDash, MAP_ID, slabRects, onSlab, ladderAt, rappelSpot, connect, start, tick, matchmake, createPractice, MAP, P, LOOK_SIZES, STANCES, KINDS, recoilKick, blocked, lineOfSight, stepMovement, castRay, predictThrow, segmentClear, eyePos, setBroken, panelUnder, EXTRACT, MODES, clear3, supportAt, blockedAt, _matches: matches, WEAPONS, WEAPON_BY_CODE, weaponDamage, weaponKick, get botFillMs() { return BOT_FILL_MS; } };
+return { mantleSpot, startMantle, OPS, OP_LIST, setZones, setWalls, setLosTeam, BARRIER_H, startDash, MAP_ID, slabRects, onSlab, ladderAt, rappelSpot, connect, start, tick, matchmake, createPractice, MAP, P, LOOK_SIZES, STANCES, KINDS, recoilKick, blocked, lineOfSight, stepMovement, castRay, predictThrow, segmentClear, eyePos, setBroken, panelUnder, EXTRACT, MODES, clear3, supportAt, blockedAt, _matches: matches, WEAPONS, WEAPON_BY_CODE, weaponDamage, weaponKick, get botFillMs() { return BOT_FILL_MS; } };
 });
