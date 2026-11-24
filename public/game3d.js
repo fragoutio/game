@@ -222,7 +222,41 @@
       const sign = new THREE.Mesh(new THREE.PlaneGeometry(26, 6.5), basic(0xffffff, { map: tex, transparent: true, depthWrite: false }));
       sign.position.set(x, 7.2, z); sign.rotation.y = ry; g.add(sign);
     }
+    // Speed: the map is hundreds of small boxes. Merge every piece that never changes into one mesh per
+    // material (breakable panels stay separate), so the graphics chip gets a few dozen draw calls, not ~800.
+    mergeStatic(g, new Set([...panelMeshes.values()].map(p => p.mesh)));
     scene.add(g);
+  }
+  function mergeStatic(root, skip) {
+    root.updateMatrixWorld(true);
+    const groups = new Map(), take = [];
+    root.traverse(o => {
+      if (o === root) return;
+      for (let p = o; p && p !== root; p = p.parent) if (skip.has(p)) return;
+      if (o.isInstancedMesh || !(o.isMesh || o.isLineSegments) || Array.isArray(o.material) || o.material.map) return;
+      const m = o.material;
+      const key = [o.isMesh ? 'M' : 'L', m.type, m.color.getHexString(), m.opacity, m.transparent, m.side, !!m.wireframe, m.depthWrite].join('|');
+      if (!groups.has(key)) groups.set(key, { mat: m, line: !o.isMesh, list: [] });
+      groups.get(key).list.push(o); take.push(o);
+    });
+    for (const o of take) if (o.parent) o.parent.remove(o);
+    for (const { mat, line, list } of groups.values()) {
+      const pos = [], nor = [];
+      for (const o of list) {
+        const geo = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
+        geo.applyMatrix4(o.matrixWorld);
+        pos.push(geo.attributes.position.array);
+        if (!line) nor.push(geo.attributes.normal ? geo.attributes.normal.array : new Float32Array(geo.attributes.position.count * 3));
+      }
+      const cat = arrs => { const out = new Float32Array(arrs.reduce((n, a) => n + a.length, 0)); let k = 0; for (const a of arrs) { out.set(a, k); k += a.length; } return out; };
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(cat(pos), 3));
+      if (!line) geo.setAttribute('normal', new THREE.BufferAttribute(cat(nor), 3));
+      geo.computeBoundingSphere();
+      const merged = line ? new THREE.LineSegments(geo, mat) : new THREE.Mesh(geo, mat);
+      merged.matrixAutoUpdate = false;
+      root.add(merged);
+    }
   }
   buildArena();
 
@@ -1706,6 +1740,9 @@
       if (revealed !== !!act.xray) { act.xray = revealed; act.ch.root.traverse(o => { if (revealed) o.layers.enable(1); else o.layers.disable(1); }); }
       if (revealed) xrayOn = true;
       const seen = act.info.team === match.myTeam || !me.alive || revealed || Core.lineOfSight(me.x, me.y, act.sx, act.sy, (me.z || 0) + 33, act.sz + 33);
+      // speed: don't draw players you can't see (behind walls); check their head and their legs
+      const ez = (me.z || 0) + 33, near = Math.hypot(act.sx - me.x, act.sy - me.y) < 60;
+      act.ch.root.visible = !firstPerson || revealed || near || Core.lineOfSight(me.x, me.y, act.sx, act.sy, ez, act.sz + 40) || Core.lineOfSight(me.x, me.y, act.sx, act.sy, ez, act.sz + 10);
       const vis = p[4] && proj.z < 1 && seen;
       act.label.style.display = vis ? '' : 'none';
       if (vis) {

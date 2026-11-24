@@ -38,6 +38,34 @@
 
   const lambert = hex => new THREE.MeshLambertMaterial({ color: hex, flatShading: true });
 
+  // Speed: merge a group's plain child meshes that share a look into one mesh (fewer draw calls). Children that
+  // have children of their own, or are listed in keep, stay as they are.
+  function mergeChildren(group, keep = new Set()) {
+    const sets = new Map();
+    for (const o of group.children) {
+      if (!o.isMesh || o.children.length || keep.has(o) || Array.isArray(o.material) || o.material.map) continue;
+      const m = o.material, key = [m.type, m.color.getHexString(), m.opacity, m.transparent].join('|');
+      if (!sets.has(key)) sets.set(key, []);
+      sets.get(key).push(o);
+    }
+    for (const list of sets.values()) {
+      if (list.length < 2) continue;
+      const pos = [], nor = [];
+      for (const o of list) {
+        o.updateMatrix();
+        const g = (o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone()).applyMatrix4(o.matrix);
+        pos.push(g.attributes.position.array); nor.push(g.attributes.normal.array);
+        group.remove(o);
+      }
+      const cat = arrs => { const out = new Float32Array(arrs.reduce((n, a) => n + a.length, 0)); let k = 0; for (const a of arrs) { out.set(a, k); k += a.length; } return out; };
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(cat(pos), 3));
+      geo.setAttribute('normal', new THREE.BufferAttribute(cat(nor), 3));
+      geo.computeBoundingSphere();
+      group.add(new THREE.Mesh(geo, list[0].material));
+    }
+  }
+
   function buildCharacter(look, teamHex, opts = {}) {
     const L = k => LOOKS[k][Math.max(0, Math.min(LOOKS[k].length - 1, look[k] | 0))];
     const mats = {
@@ -165,11 +193,13 @@
       goggles();
     }
 
+    // fewer draw calls: merge same-coloured pieces within each moving part
+    for (const grp of [body, head, rifle, shotgun, legs[-1].hip, legs[1].hip, legs[-1].knee, legs[1].knee, arms[-1].sh, arms[1].sh, arms[-1].el, arms[1].el]) mergeChildren(grp);
     return {
       root: rootG, body, legs, arms, gun, head, flash, mats, flashMats,
       setWeapon(w) { rifle.visible = w !== 'shotgun'; shotgun.visible = w === 'shotgun'; },
       phase: Math.random() * 6, recoil: 0, flashT: 0, hitT: 0, deadT: 0,
-      dispose() { for (const k in mats) mats[k].dispose(); rootG.traverse(o => { if (o.material && !Object.values(mats).includes(o.material)) o.material.dispose(); }); },
+      dispose() { for (const k in mats) mats[k].dispose(); rootG.traverse(o => { if (o.material && !Object.values(mats).includes(o.material)) o.material.dispose(); if (o.isMesh && !Object.values(geo).includes(o.geometry)) o.geometry.dispose(); }); },
     };
   }
 
