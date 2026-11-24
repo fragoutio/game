@@ -58,6 +58,9 @@
   const CENTER = new THREE.Vector3(AW / 2, 0, AH / 2);
   const lam = hex => new THREE.MeshLambertMaterial({ color: hex, flatShading: true });
   const basic = (hex, extra) => new THREE.MeshBasicMaterial(Object.assign({ color: hex }, extra));
+  // highlighted (revealed) enemies: drawn again on top of everything in solid red
+  const xrayMat = new THREE.MeshBasicMaterial({ color: 0xff2244, transparent: true, opacity: 0.6, depthTest: false, depthWrite: false, fog: false });
+  let xrayOn = false;
   const BORDER_H = 3.2, CRATE_H = 2.6;   // taller than a player, so cover really hides you
 
   function makeSignTexture() {
@@ -667,7 +670,7 @@
       else if (GREN_KEYS[e.code] && !e.repeat) startAim(GREN_KEYS[e.code]);
       else if ((e.code === 'KeyQ' || e.code === 'KeyE') && !e.repeat) sightKey(e.code === 'KeyQ' ? -1 : 1);
       else if (e.code === 'Space' && !e.repeat) useTactical();
-      else if (e.code === 'CapsLock' && !e.repeat) useUltimate();
+      else if (e.code === 'CapsLock' && !e.repeat) capsDown();
       else if (e.code === 'Tab' && !e.repeat) { if (me.onLadder) { me.dropN = (me.dropN || 0) + 1; me.wantDrop = true; } }   // Tab: let go of a ladder
       else if (e.code === 'Digit1' || e.code === 'Numpad1') pickWeapon('rifle');
       else if (e.code === 'Digit2' || e.code === 'Numpad2') pickWeapon('shotgun');
@@ -676,7 +679,7 @@
     const act = KEYMAP[e.code];
     if (act) menuAction(act);
   });
-  addEventListener('keyup', e => { keys.delete(e.code); if (e.code === 'KeyW') sprintLatch = false; if (GREN_KEYS[e.code]) releaseAim(GREN_KEYS[e.code]); });
+  addEventListener('keyup', e => { keys.delete(e.code); if (e.code === 'KeyW') sprintLatch = false; if (GREN_KEYS[e.code]) releaseAim(GREN_KEYS[e.code]); if (e.code === 'CapsLock') capsUp(); });
   addEventListener('blur', () => { keys.clear(); sprintLatch = false; cancelAim(); });
   let lastWTap = -1e9, sprintLatch = false;
   canvas.addEventListener('pointerdown', () => canvas.focus());
@@ -809,7 +812,7 @@
     clearMatch();
     match = msg; matchOver = false; lastPhase = ''; lastRound = 0;
     const mine = msg.players.find(p => p.id === msg.you);
-    me.op = mine.op || profile.op; me.tacLeft = 0; me.ultPct = 0; me.spdMul = 1; me.dashT = 0;
+    me.op = mine.op || profile.op; me.tacLeft = 0; me.ultPct = 0; me.spdMul = 1; me.dashT = 0; me.dashTo = null; me.mark = null; me.dashAnim = null;
     match.myTeam = mine.team;
     for (const p of msg.players) {
       const ch = Chars.buildCharacter(p.look, TEAM[p.team].hex);
@@ -1058,7 +1061,7 @@
   function sendInput(now) {
     if (now - lastInput < 33) return;
     lastInput = now;
-    sendPlay({ t: 'input', weapon: me.weapon || 'rifle', f: lastMove.f, s: lastMove.s, run: lastMove.run, crouch: lastMove.crouch, ads: !!me.ads, lean: me.lean || 0, rap: me.rapN || 0, drop: me.dropN || 0, tac: me.tacN || 0, ult: me.ultN || 0, x: Math.round(me.x * 10) / 10, y: Math.round(me.y * 10) / 10, yaw: Math.round(me.yaw * 1000) / 1000, pitch: Math.round(me.pitch * 1000) / 1000 });
+    sendPlay({ t: 'input', weapon: me.weapon || 'rifle', f: lastMove.f, s: lastMove.s, run: lastMove.run, crouch: lastMove.crouch, ads: !!me.ads, lean: me.lean || 0, rap: me.rapN || 0, drop: me.dropN || 0, tac: me.tacN || 0, ult: me.ultN || 0, mark: me.markN || 0, x: Math.round(me.x * 10) / 10, y: Math.round(me.y * 10) / 10, yaw: Math.round(me.yaw * 1000) / 1000, pitch: Math.round(me.pitch * 1000) / 1000 });
   }
 
   // what's under the centre crosshair? Same test as the server (core.castRay): body height depends on
@@ -1286,15 +1289,52 @@
     if (me.tacLeft > 0) { sfx.denied(); toast(`${op.tac.name} ready in ${me.tacLeft} s`); return; }
     me.tacN = (me.tacN || 0) + 1;
     if (me.op === 'volt') {   // blink right away on this computer too (the server does the same)
-      const c = Math.cos(me.yaw), sn = Math.sin(me.yaw);
-      Core.startDash(me, c * lastMove.f - sn * lastMove.s, sn * lastMove.f + c * lastMove.s);
+      const c = Math.cos(me.yaw), sn = Math.sin(me.yaw), fx = me.x, fy = me.y;
+      if (!Core.startDash(me, c * lastMove.f - sn * lastMove.s, sn * lastMove.f + c * lastMove.s)) { sfx.denied(); toast('Nowhere to blink to'); return; }
+      // the camera stays put for a moment while you see yourself zip ahead, then catches up
+      me.dashAnim = { t: 0, from: camera.position.clone(), fromX: fx, fromY: fy };
+      burst(fx * S, 1, fy * S, 0xffd23f, 14, 3);
     }
     me.tacLeft = op.tac.cd;   // until the server says otherwise
   }
   function useUltimate() {
     const op = Core.OPS[me.op]; if (!op || !me.alive) return;
+    if (me.op === 'volt' && !me.mark) { sfx.denied(); toast('Hold Caps Lock for 4 s to set your warp point first'); return; }
+    if (me.op === 'haven' && curState && !curState.players.some(p => !p[4] && p[0] !== match.you && actors.get(p[0]) && actors.get(p[0]).info.team === match.myTeam)) { sfx.denied(); toast('No knocked-out teammates to reboot'); return; }
     if ((me.ultPct || 0) < 100) { sfx.denied(); toast(`${op.ult.name} charging: ${me.ultPct || 0}%`); return; }
     me.ultN = (me.ultN || 0) + 1;
+    if (me.op === 'volt') { burst(me.x * S, 1, me.y * S, 0xffd23f, 20, 4); me.x = me.mark[0]; me.y = me.mark[1]; me.z = me.mark[2]; me.vz = 0; burst(me.x * S, 1, me.y * S, 0xffd23f, 20, 4); }
+  }
+  // VOLT: hold Caps Lock 4 s to set the warp point where you stand
+  let capsAt = 0, capsMarked = false;
+  function capsDown() {
+    capsAt = performance.now(); capsMarked = false;
+    if (me.op !== 'volt') useUltimate();   // everyone else: the ultimate fires on press
+  }
+  function capsUp() {
+    if (capsAt && me.op === 'volt' && !capsMarked) useUltimate();   // a tap warps
+    capsAt = 0; $('mark-ring').hidden = true;
+  }
+  const markMesh = new THREE.Group();
+  {
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 6, 6), basic(0xffd23f, { transparent: true, opacity: 0.5, depthWrite: false }));
+    beam.position.y = 3;
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.45, 0.6, 20), basic(0xffd23f, { side: THREE.DoubleSide }));
+    ring.rotation.x = -Math.PI / 2; ring.position.y = 0.04;
+    markMesh.add(beam, ring); markMesh.visible = false; scene.add(markMesh);
+  }
+  function updateMark(now) {
+    const ring = $('mark-ring');
+    if (capsAt && me.op === 'volt' && !capsMarked && me.alive && match) {
+      const k = Math.min(1, (now - capsAt) / 4000);
+      ring.hidden = false; ring.style.setProperty('--p', Math.round(k * 100) + '%');
+      if (k >= 1) {
+        capsMarked = true; me.markN = (me.markN || 0) + 1; me.mark = [me.x, me.y, me.z || 0];
+        toast('Warp point set'); sfx.ready(); ring.hidden = true;
+      }
+    }
+    markMesh.visible = !!(me.mark && me.op === 'volt' && match);
+    if (markMesh.visible) markMesh.position.set(me.mark[0] * S, me.mark[2] * S, me.mark[1] * S);
   }
   function updateAbilityHud(row) {
     const op = Core.OPS[me.op]; if (!op || !row) return;
@@ -1380,6 +1420,13 @@
     const side = me.leanAmt < 0 ? -1 : 1, [lx, ly] = Core.eyePos(me.x, me.y, me.yaw, Math.abs(me.leanAmt) > 0.01 ? side : 0);
     const lk = Math.abs(me.leanAmt);
     wantPos.set((me.x + (lx - me.x) * lk) * S, (me.z || 0) * S + me.eyeY + bob, (me.y + (ly - me.y) * lk) * S);
+    if (me.dashAnim) {   // blink: hold back (a little behind and above) for a beat, then swoop in after yourself
+      const d = me.dashAnim; d.t += dt;
+      const hold = 0.12, dur = 0.42, k = Math.max(0, Math.min(1, (d.t - hold) / (dur - hold))), e = k * k * (3 - 2 * k);
+      const from = tmpV.copy(d.from); from.y += 0.5 * (1 - e);
+      wantPos.lerpVectors(from, wantPos.clone(), e);
+      if (d.t >= dur) me.dashAnim = null;
+    }
     const fov = me.stance === 'slide' ? 86 : me.running ? 82 : me.ads ? (me.weapon === 'shotgun' ? ADS_FOV_SG : hcog() ? ADS_FOV_HCOG : ADS_FOV) : 75;
     me.fov += (fov - me.fov) * Math.min(1, dt * 8);
     setFov(Math.round(me.fov * 10) / 10);
@@ -1570,6 +1617,8 @@
 
     const a = prevState ? Math.min(1, (now - curAt) / interval) : 1;
     const prev = prevState ? new Map(prevState.players.map(p => [p[0], p])) : new Map();
+    xrayOn = false;
+    updateMark(now);
     for (const p of curState.players) {
       const act = actors.get(p[0]); if (!act) continue;
       const q = prev.get(p[0]) || p;
@@ -1585,6 +1634,11 @@
         if (err > 36 || !me.alive) { me.x = act.sx; me.y = act.sy; me.z = act.sz; me.vz = 0; }
         else if (!moving) { me.x += (act.sx - me.x) * 0.15; me.y += (act.sy - me.y) * 0.15; }
         act.label.style.display = 'none';
+        if (me.dashAnim) {   // see yourself zip ahead while the camera catches up
+          act.ch.root.visible = true; act.ch.root.position.set(me.x * S, (me.z || 0) * S, me.y * S);
+          act.ch.root.rotation.y = Math.PI / 2 - me.yaw; Chars.animateCharacter(act.ch, dt, 8, true, 0, 'stand', 0);
+          if (Math.random() < 0.6) burst(me.x * S, 1.1, me.y * S, 0xffd23f, 2, 1);
+        } else act.ch.root.visible = false;
         continue;
       }
       const x = act.sx * S, z = act.sy * S;
@@ -1604,7 +1658,10 @@
       } else if (act.rope) act.rope.visible = false;
       // names: teammates always, enemies only when you can actually see them
       proj.set(x, 2.05 + act.sz * S, z).project(camera);
-      const seen = act.info.team === match.myTeam || !me.alive || ((p[17] || 0) & 4) || Core.lineOfSight(me.x, me.y, act.sx, act.sy, (me.z || 0) + 33, act.sz + 33);
+      const revealed = !!(p[4] && ((p[17] || 0) & 4) && act.info.team !== match.myTeam);
+      if (revealed !== !!act.xray) { act.xray = revealed; act.ch.root.traverse(o => { if (revealed) o.layers.enable(1); else o.layers.disable(1); }); }
+      if (revealed) xrayOn = true;
+      const seen = act.info.team === match.myTeam || !me.alive || revealed || Core.lineOfSight(me.x, me.y, act.sx, act.sy, (me.z || 0) + 33, act.sz + 33);
       const vis = p[4] && proj.z < 1 && seen;
       act.label.style.display = vis ? '' : 'none';
       if (vis) {
@@ -1643,7 +1700,7 @@
 
     // first-person gun animation
     animateViewmodel(dt, moving);
-    vm.group.visible = firstPerson;
+    vm.group.visible = firstPerson && !me.dashAnim;
   }
 
   // minimap: walls, you and your teammates (enemies stay hidden)
@@ -1723,6 +1780,11 @@
     }
     renderer.clear();
     renderer.render(scene, camera);
+    if (xrayOn) {   // revealed enemies glow through walls
+      scene.overrideMaterial = xrayMat; camera.layers.set(1);
+      renderer.render(scene, camera);
+      camera.layers.set(0); scene.overrideMaterial = null;
+    }
     if (firstPerson) { renderer.clearDepth(); renderer.render(vmScene, vmCam); }
 
     if (firstFrame) { firstFrame = false; $('loading').hidden = true; show('title'); }

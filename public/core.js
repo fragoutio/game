@@ -214,14 +214,14 @@ const OPS = {
     tac: { name: 'OVERDRIVE', cd: 24, desc: 'Fire 60% faster for 6 s' },
     ult: { name: 'BARRAGE', charge: 100, desc: 'Three blasts land along your aim after 1 s' } },
   volt:   { name: 'VOLT', cls: 'SKIRMISHER', color: '#ffd23f',
-    tac: { name: 'BLINK', cd: 10, desc: 'Dash 5 m the way you are moving' },
-    ult: { name: 'RUSH', charge: 90, desc: 'Move 35% faster for 8 s' } },
+    tac: { name: 'BLINK', cd: 10, desc: 'Dash 5 m the way you are moving, straight through walls' },
+    ult: { name: 'WARP', charge: 90, desc: 'Teleport to your warp point (hold Caps Lock 4 s to set it, any time)' } },
   echo:   { name: 'ECHO', cls: 'RECON', color: '#3fe0ff',
-    tac: { name: 'PULSE', cd: 20, desc: 'Reveal enemies within 19 m for 4 s' },
-    ult: { name: 'SWEEP', charge: 110, desc: 'Reveal every enemy for 6 s' } },
+    tac: { name: 'PULSE', cd: 20, desc: 'Highlight enemies within 20 m for 7 s, even through walls' },
+    ult: { name: 'SWEEP', charge: 110, desc: 'Highlight every enemy for 15 s, even through walls' } },
   haven:  { name: 'HAVEN', cls: 'SUPPORT', color: '#5dffb4',
     tac: { name: 'PATCH', cd: 22, desc: 'Heal you and nearby teammates 2 health' },
-    ult: { name: 'DOME', charge: 120, desc: 'A dome for 10 s that stops bullets going in or out' } },
+    ult: { name: 'REBOOT', charge: 120, desc: 'Bring every knocked-out teammate back, right next to you' } },
   warden: { name: 'WARDEN', cls: 'CONTROLLER', color: '#c58bff',
     tac: { name: 'SMOKE', cd: 18, desc: 'A smoke cloud ahead of you for 8 s (blocks sight)' },
     ult: { name: 'LOCKDOWN', charge: 110, desc: 'A 6 m zone for 9 s: enemies inside are slowed and revealed' } },
@@ -492,6 +492,7 @@ function resetRound(m) {
       stance: 'stand', running: false, slideT: 0, slideCd: 0, cd: { boom: 0, frag: 0, therm: 0 }, throws: [], switchT: 0, cool: 0, z: 0, vz: 0, respawnT: 0, rap: null, onLadder: false });
     p.input = { f: 0, s: 0, yaw, pitch: 0, run: false, crouch: false };
     p.brain.path = []; p.brain.repath = 0; p.brain.guard = null; Object.assign(p.brain, { via: undefined, retreatT: 0, peekT: 0, pauseT: 0, roam: null, lastSeen: null, seen: 0, aimErr: null });
+    if (p.bot) p.mark = [x, y, 0];
   }
 }
 
@@ -549,14 +550,9 @@ function stepMovement(p, mx, my, run, crouch, runOk, canMove, ads = false) {
   }
   if (!canMove) { settle(p); return; }
   // Blink (VOLT): a quick dash, stopped by walls
-  if (p.dashT > 0) {
-    p.dashT--;
-    const z = p.z || 0;
-    for (let k = 0; k < 3; k++) {
-      const nx = p.x + p.dashX * 5, ny = p.y + p.dashY * 5;
-      if (!blockedAt(nx, ny, P.r, z) && supportAt(nx, ny, z) <= z + 14 && !stairBlocks(nx, ny, z)) { p.x = nx; p.y = ny; } else { p.dashT = 0; break; }
-    }
-    settle(p);
+  if (p.dashT > 0 && p.dashTo) {   // flies straight to the landing spot (through walls)
+    p.x += (p.dashTo[0] - p.x) / p.dashT; p.y += (p.dashTo[1] - p.y) / p.dashT;
+    if (--p.dashT <= 0) { p.x = p.dashTo[0]; p.y = p.dashTo[1]; p.dashTo = null; settle(p); }
     return;
   }
   // Ladders: walk toward the wall/floor edge to climb, away from it to climb down. Space lets go (you drop).
@@ -855,7 +851,8 @@ function botThink(m, b) {
     if (br.seen > br.react && OPS[b.op]) {
       const want = b.op === 'haven' ? b.hp <= 60 : true;
       if (b.tac <= 0 && want && Math.random() < 0.012) br.useTac = true;
-      if (b.ult >= OPS[b.op].ult.charge * 60 && Math.random() < 0.008) br.useUlt = true;
+      const wantUlt = b.op === 'volt' ? b.hp <= 40 : b.op === 'haven' ? m.players.some(o => !o.alive && o.team === b.team) : true;
+      if (b.ult >= OPS[b.op].ult.charge * 60 && wantUlt && Math.random() < 0.008) br.useUlt = true;
     }
     if (b.weapon !== 'shotgun' && dist < 100) inp.weapon = 'shotgun';
     else if (b.weapon === 'shotgun' && dist > 170) inp.weapon = 'rifle';
@@ -1168,7 +1165,8 @@ function handlePlay(client, msg) {
       if (Number.isFinite(+msg.x) && Number.isFinite(+msg.y)) p.claim = [+msg.x, +msg.y];
       const rap = +msg.rap || 0;
       if (rap > (p.rapSeen || 0)) { p.rapSeen = rap; p.wantRap = true; }
-      const tac = +msg.tac || 0, ult = +msg.ult || 0;
+      const tac = +msg.tac || 0, ult = +msg.ult || 0, mark = +msg.mark || 0;
+      if (mark > (p.markSeen || 0) && p.alive) { p.markSeen = mark; p.mark = [p.x, p.y, p.z || 0]; }
       if (tac > (p.tacSeen || 0)) { p.tacSeen = tac; p.wantTac = true; }
       if (ult > (p.ultSeen || 0)) { p.ultSeen = ult; p.wantUlt = true; }
       const drop = +msg.drop || 0;
@@ -1191,13 +1189,13 @@ function respawnDefender(m, p) {
 }
 
 // an attacker brought back by a reboot card: at their reboot point (nudged off anyone standing there)
-function rebootPlayer(m, p, at) {
+function rebootPlayer(m, p, at, z = 0) {
   let [x, y, yaw] = at;
   for (let k = 0; k < 24; k++) {
     const a = k * 2.4, d = k ? 18 + k * 3 : 0, tx = at[0] + Math.cos(a) * d, ty = at[1] + Math.sin(a) * d;
-    if (!blocked(tx, ty, P.r) && m.players.every(o => o === p || !o.alive || Math.hypot(o.x - tx, o.y - ty) > 26)) { x = tx; y = ty; break; }
+    if (!blockedAt(tx, ty, P.r, z) && supportAt(tx, ty, z) >= z - 2 && m.players.every(o => o === p || !o.alive || Math.hypot(o.x - tx, o.y - ty) > 26)) { x = tx; y = ty; break; }
   }
-  Object.assign(p, { rap: null, onLadder: false, x, y, yaw, pitch: 0, z: 0, vz: 0, hp: P.hp, alive: true, cool: 0, burst: 0, stance: 'stand',
+  Object.assign(p, { rap: null, onLadder: false, x, y, yaw, pitch: 0, z, vz: 0, hp: P.hp, alive: true, cool: 0, burst: 0, stance: 'stand',
     running: false, slideT: 0, switchT: 0, respawnT: 0 });
   p.input = Object.assign({}, p.input, { yaw, pitch: 0 });
   p.brain.path = []; p.brain.repath = 0; p.brain.guard = null; Object.assign(p.brain, { via: undefined, retreatT: 0, peekT: 0, pauseT: 0, roam: null, lastSeen: null, seen: 0, aimErr: null });
@@ -1261,8 +1259,16 @@ function stepExtraction(m) {
 // direction to blink: the way you're moving, or where you're facing
 function startDash(p, mx, my) {
   const len = Math.hypot(mx, my);
-  const dx = len ? mx / len : Math.cos(p.yaw || 0), dy = len ? my / len : Math.sin(p.yaw || 0);
-  p.dashT = 8; p.dashX = dx; p.dashY = dy;
+  const dx = len ? mx / len : Math.cos(p.yaw || 0), dy = len ? my / len : Math.sin(p.yaw || 0), z = p.z || 0;
+  // goes straight through walls: land on the clear spot closest to 120 px ahead (never outside the arena)
+  const ok = (x, y) => x > 32 + P.r && y > 32 + P.r && x < MAP.w - 32 - P.r && y < MAP.h - 32 - P.r &&
+    !blockedAt(x, y, P.r, z) && !stairBlocks(x, y, z) && supportAt(x, y, z) <= z + 14;
+  const ds = []; for (let d = 30; d <= 156; d += 6) ds.push(d);
+  ds.sort((a, b) => Math.abs(a - 120) - Math.abs(b - 120));
+  const d = ds.find(dd => ok(p.x + dx * dd, p.y + dy * dd));
+  if (!d) return false;
+  p.dashT = 8; p.dashTo = [p.x + dx * d, p.y + dy * d]; p.rap = null;
+  return true;
 }
 function useTac(m, p, mx, my) {
   const op = OPS[p.op];
@@ -1270,8 +1276,8 @@ function useTac(m, p, mx, my) {
   p.tac = op.tac.cd * 60;
   const enemies = m.players.filter(o => o.alive && o.team !== p.team);
   if (p.op === 'riot') p.fx.over = 360;
-  else if (p.op === 'volt') { startDash(p, mx, my); p.rap = null; }
-  else if (p.op === 'echo') for (const o of enemies) { if (Math.hypot(o.x - p.x, o.y - p.y) < 450) o.fx.reveal = Math.max(o.fx.reveal || 0, 240); }
+  else if (p.op === 'volt') { if (!startDash(p, mx, my)) { p.tac = 0; return; } }
+  else if (p.op === 'echo') for (const o of enemies) { if (Math.hypot(o.x - p.x, o.y - p.y) < 480) o.fx.reveal = Math.max(o.fx.reveal || 0, 420); }
   else if (p.op === 'haven') {
     for (const o of m.players) if (o.alive && o.team === p.team && Math.hypot(o.x - p.x, o.y - p.y) < 120) { o.hp = Math.min(P.hp, o.hp + 40); m.events.push(['hl', o.id]); }
   } else if (p.op === 'warden') {
@@ -1283,13 +1289,25 @@ function useTac(m, p, mx, my) {
 function useUlt(m, p) {
   const op = OPS[p.op];
   if (!op || p.ult < op.ult.charge * 60 || !p.alive) return;
+  const down = m.players.filter(o => !o.alive && o.team === p.team && o !== p);
+  if (p.op === 'haven' && !down.length) return;   // nobody to bring back: keep the charge
+  if (p.op === 'volt' && !p.mark) return;         // no warp point set yet
   p.ult = 0;
   if (p.op === 'riot') {   // three blasts along the aim, stopping short of the first wall
     const hit = rayWall(p.x, p.y, Math.cos(p.yaw), Math.sin(p.yaw), 400), max = hit ? hit.t - 20 : 400;
     [140, 220, 300].forEach((d, k) => { const dd = Math.min(d, max - (2 - k) * 40); if (dd > 30) m.strikes.push({ x: p.x + Math.cos(p.yaw) * dd, y: p.y + Math.sin(p.yaw) * dd, t: 60 + k * 12, owner: p.id, team: p.team }); });
-  } else if (p.op === 'volt') p.fx.rush = 480;
-  else if (p.op === 'echo') { for (const o of m.players) if (o.alive && o.team !== p.team) o.fx.reveal = Math.max(o.fx.reveal || 0, 360); }
-  else if (p.op === 'haven') m.zones.push({ k: 'dome', x: p.x, y: p.y, r: 70, t: 600, team: p.team, owner: p.id });
+  } else if (p.op === 'volt') {   // warp to the point you set
+    m.events.push(['tp', p.id, Math.round(p.x), Math.round(p.y)]);
+    Object.assign(p, { x: p.mark[0], y: p.mark[1], z: p.mark[2], vz: 0, rap: null, onLadder: false, dashT: 0, dashTo: null });
+  }
+  else if (p.op === 'echo') { for (const o of m.players) if (o.alive && o.team !== p.team) o.fx.reveal = Math.max(o.fx.reveal || 0, 900); }
+  else if (p.op === 'haven') {   // every knocked-out teammate comes back next to you (their reboot cards are used up)
+    for (const o of down) {
+      if (m.cards) m.cards = m.cards.filter(c => c.id !== o.id);
+      rebootPlayer(m, o, [p.x, p.y, p.yaw], p.z || 0);
+      m.events.push(['rb', p.id, o.id]);
+    }
+  }
   else if (p.op === 'warden') m.zones.push({ k: 'lock', x: p.x, y: p.y, r: 140, t: 540, team: p.team, owner: p.id });
   m.events.push(['ab', p.id, 1, p.op]);
 }
@@ -1363,6 +1381,7 @@ function stepMatch(m) {
       if (m.phase !== 'countdown' && !p.rap && !p.onLadder && Math.hypot(cx - p.x, cy - p.y) < P.claimMax && !blockedAt(cx, cy, P.r, p.z || 0) && supportAt(cx, cy, p.z || 0) >= (p.z || 0) - 2) { p.x = cx; p.y = cy; }
     }
     if (m.phase === 'fight') for (const w of wants) throwGrenade(m, p, w);
+    if (p.bot && p.op === 'haven' && p.ult >= OPS.haven.ult.charge * 60 && m.players.some(o => !o.alive && o.team === p.team) && Math.random() < 0.01) p.brain.useUlt = true;   // revive even out of a fight
     if (p.bot) { if (p.brain.useTac) useTac(m, p, mx, my); if (p.brain.useUlt) useUlt(m, p); p.brain.useTac = p.brain.useUlt = false; }
     if (p.wantTac) { p.wantTac = false; if (m.phase === 'fight') useTac(m, p, mx, my); }
     if (p.wantUlt) { p.wantUlt = false; if (m.phase === 'fight') useUlt(m, p); }
