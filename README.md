@@ -78,8 +78,8 @@ Everything also works with a mouse or a gamepad (D-pad + A/B).
 | Shift or C | While running: slide (fast, low, slows into a crouch). Otherwise: crouch (hold) |
 | 1 / 2 | Alternator / shotgun (0.4 s to switch) |
 | T | Alternator sight: 1.3x HOG or 2.5x HCOG |
-| Space / Caps Lock | Operator tactical / ultimate |
-| Tab | Let go of a ladder |
+| Space / Tab | Operator tactical / ultimate |
+| Caps Lock | Let go of a ladder |
 | Q / E (while crouched) | Aim down the sight (1.3x zoom, round holo sight): 25% less recoil, finer turning. Only while crouched: stand up and you zoom back out |
 | Q / E while aiming | Lean left / right (tap again to straighten up): your eye and gun shift 11 px to the side, stopping short of walls |
 | Space | Lower the sight (standing up also lowers it) |
@@ -204,12 +204,12 @@ Knocked-out players watch the rest of the round from an overhead camera.
 
 ## Operators
 
-Pick one in the LOCKER. Space = tactical (cooldown), Caps Lock = ultimate (charges over time, faster when you deal damage).
+Pick one in the LOCKER. Space = tactical (cooldown), Tab = ultimate (charges over time, faster when you deal damage).
 
 | Operator | Class | Tactical | Ultimate |
 |---|---|---|---|
 | RIOT | Assault | CLUSTER: a frag and thermite in one (blast, then a wall of fire) | RAMPAGE: 7 s of firing twice as fast, 60% less damage taken, nonstop fire |
-| VOLT | Skirmisher | BLINK: dash 5 m straight through walls | WARP: teleport to your warp point (hold Caps Lock 4 s to set it) |
+| VOLT | Skirmisher | BLINK: dash 5 m straight through walls | WARP: teleport to your warp point (hold Tab 4 s to set it) |
 | ECHO | Recon | PULSE: highlight enemies within 20 m for 7 s (through walls) | SWEEP: highlight every enemy for 15 s |
 | HAVEN | Support | PATCH: heal you and nearby teammates 2 health | REBOOT: bring every knocked-out teammate back next to you |
 | WARDEN | Controller | BARRIER: place up to 3 walls; your team shoots through, enemies need 9 hits; Space up close to one mantles over it | SPIKE TRAP: on the floor or ceiling; an enemy walking over or under it loses 80% of their health |

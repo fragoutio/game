@@ -207,7 +207,7 @@ function weaponKick(w, n) {
 }
 const ROUNDS_TO_WIN = 3;
 // ---------- Operators ----------
-// One per class. tac = tactical (Space) with a cooldown in seconds; ult = ultimate (Caps Lock), charges over
+// One per class. tac = tactical (Space) with a cooldown in seconds; ult = ultimate (Tab), charges over
 // `charge` seconds (dealing damage charges it faster).
 const OPS = {
   riot:   { name: 'RIOT', cls: 'ASSAULT', color: '#ff6a2a',
@@ -215,7 +215,7 @@ const OPS = {
     ult: { name: 'RAMPAGE', charge: 100, desc: '7 s: fire twice as fast, take 60% less damage, and never stop shooting' } },
   volt:   { name: 'VOLT', cls: 'SKIRMISHER', color: '#ffd23f',
     tac: { name: 'BLINK', cd: 10, desc: 'Dash 5 m the way you are moving, straight through walls' },
-    ult: { name: 'WARP', charge: 90, desc: 'Teleport to your warp point (hold Caps Lock 4 s to set it, any time)' } },
+    ult: { name: 'WARP', charge: 90, desc: 'Teleport to your warp point (hold Tab 4 s to set it, any time)' } },
   echo:   { name: 'ECHO', cls: 'RECON', color: '#3fe0ff',
     tac: { name: 'PULSE', cd: 20, desc: 'Highlight enemies within 20 m for 7 s, even through walls' },
     ult: { name: 'SWEEP', charge: 110, desc: 'Highlight every enemy for 15 s, even through walls' } },

@@ -519,7 +519,7 @@
       const d = $('op-desc'); d.innerHTML = '';
       const c = document.createElement('b'); c.textContent = op.cls; c.style.color = op.color;
       const t = document.createElement('div'); t.innerHTML = '<kbd>SPACE</kbd> '; t.append(op.tac.name + ' · ' + op.tac.desc + ` (${op.tac.cd} s)`);
-      const u = document.createElement('div'); u.innerHTML = '<kbd>CAPS</kbd> '; u.append(op.ult.name + ' · ' + op.ult.desc);
+      const u = document.createElement('div'); u.innerHTML = '<kbd>TAB</kbd> '; u.append(op.ult.name + ' · ' + op.ult.desc);
       d.append(c, t, u);
     }
     for (const row of document.querySelectorAll('#screen-locker [data-opt]')) {
@@ -670,8 +670,8 @@
       else if (GREN_KEYS[e.code] && !e.repeat) startAim(GREN_KEYS[e.code]);
       else if ((e.code === 'KeyQ' || e.code === 'KeyE') && !e.repeat) sightKey(e.code === 'KeyQ' ? -1 : 1);
       else if (e.code === 'Space' && !e.repeat) useTactical();
-      else if (e.code === 'CapsLock' && !e.repeat) capsDown();
-      else if (e.code === 'Tab' && !e.repeat) { if (me.onLadder) { me.dropN = (me.dropN || 0) + 1; me.wantDrop = true; } }   // Tab: let go of a ladder
+      else if (e.code === 'Tab' && !e.repeat) ultDown();   // Tab: ultimate (Chromebooks have no Caps Lock)
+      else if (e.code === 'CapsLock' && !e.repeat) { if (me.onLadder) { me.dropN = (me.dropN || 0) + 1; me.wantDrop = true; } }   // Caps Lock: let go of a ladder
       else if (e.code === 'Digit1' || e.code === 'Numpad1') pickWeapon('rifle');
       else if (e.code === 'Digit2' || e.code === 'Numpad2') pickWeapon('shotgun');
       return;
@@ -679,7 +679,7 @@
     const act = KEYMAP[e.code];
     if (act) menuAction(act);
   });
-  addEventListener('keyup', e => { keys.delete(e.code); if (e.code === 'KeyW') sprintLatch = false; if (GREN_KEYS[e.code]) releaseAim(GREN_KEYS[e.code]); if (e.code === 'CapsLock') capsUp(); });
+  addEventListener('keyup', e => { keys.delete(e.code); if (e.code === 'KeyW') sprintLatch = false; if (GREN_KEYS[e.code]) releaseAim(GREN_KEYS[e.code]); if (e.code === 'Tab') ultUp(); });
   addEventListener('blur', () => { keys.clear(); sprintLatch = false; cancelAim(); });
   let lastWTap = -1e9, sprintLatch = false;
   canvas.addEventListener('pointerdown', () => canvas.focus());
@@ -1287,7 +1287,7 @@
     if (vm.optics) { vm.optics.hog.visible = profile.optic !== 'hcog'; vm.optics.hcog.visible = profile.optic === 'hcog'; }
   }
 
-  // ---------- Operator abilities: Space tactical, Caps Lock ultimate ----------
+  // ---------- Operator abilities: Space tactical, Tab ultimate ----------
   function useTactical() {
     const op = Core.OPS[me.op]; if (!op || !me.alive) return;
     if (me.op === 'warden' && match) { const sp = Core.mantleSpot(me, match.myTeam); if (sp) { me.tacN = (me.tacN || 0) + 1; Core.startMantle(me, sp); sfx.swap(); return; } }   // vault over your barrier
@@ -1305,19 +1305,19 @@
   }
   function useUltimate() {
     const op = Core.OPS[me.op]; if (!op || !me.alive) return;
-    if (me.op === 'volt' && !me.mark) { sfx.denied(); toast('Hold Caps Lock for 4 s to set your warp point first'); return; }
+    if (me.op === 'volt' && !me.mark) { sfx.denied(); toast('Hold Tab for 4 s to set your warp point first'); return; }
     if (me.op === 'haven' && curState && !curState.players.some(p => !p[4] && p[0] !== match.you && actors.get(p[0]) && actors.get(p[0]).info.team === match.myTeam)) { sfx.denied(); toast('No knocked-out teammates to reboot'); return; }
     if ((me.ultPct || 0) < 100) { sfx.denied(); toast(`${op.ult.name} charging: ${me.ultPct || 0}%`); return; }
     me.ultN = (me.ultN || 0) + 1;
     if (me.op === 'volt') { burst(me.x * S, 1, me.y * S, 0xffd23f, 20, 4); me.x = me.mark[0]; me.y = me.mark[1]; me.z = me.mark[2]; me.vz = 0; burst(me.x * S, 1, me.y * S, 0xffd23f, 20, 4); }
   }
-  // VOLT: hold Caps Lock 4 s to set the warp point where you stand
+  // VOLT: hold Tab 4 s to set the warp point where you stand
   let capsAt = 0, capsMarked = false;
-  function capsDown() {
+  function ultDown() {
     capsAt = performance.now(); capsMarked = false;
     if (me.op !== 'volt') useUltimate();   // everyone else: the ultimate fires on press
   }
-  function capsUp() {
+  function ultUp() {
     if (capsAt && me.op === 'volt' && !capsMarked) useUltimate();   // a tap warps
     capsAt = 0; $('mark-ring').hidden = true;
   }
@@ -1720,7 +1720,7 @@
     const tip = $('move-tip');
     if (me.alive && (ui === 'game' || ui === 'practice')) {
       const lad = Core.ladderAt(me.x, me.y);
-      tip.textContent = me.op === 'warden' && Core.mantleSpot(me, match.myTeam) ? 'SPACE  MANTLE OVER' : me.rap ? 'RAPPELLING · X LET GO' : Core.rappelSpot(me) ? 'X  RAPPEL DOWN' : lad ? (me.onLadder ? 'W / S  CLIMB · TAB  LET GO' : 'W  CLIMB LADDER') : '';
+      tip.textContent = me.op === 'warden' && Core.mantleSpot(me, match.myTeam) ? 'SPACE  MANTLE OVER' : me.rap ? 'RAPPELLING · X LET GO' : Core.rappelSpot(me) ? 'X  RAPPEL DOWN' : lad ? (me.onLadder ? 'W / S  CLIMB · CAPS LOCK  LET GO' : 'W  CLIMB LADDER') : '';
       tip.hidden = !tip.textContent;
     } else tip.hidden = true;
 
