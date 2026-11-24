@@ -1825,9 +1825,10 @@
     renderer.clear();
     renderer.render(scene, camera);
     if (xrayOn) {   // revealed enemies glow through walls
+      const bg = scene.background; scene.background = null;   // only draw the enemies, not the sky over everything
       scene.overrideMaterial = xrayMat; camera.layers.set(1);
       renderer.render(scene, camera);
-      camera.layers.set(0); scene.overrideMaterial = null;
+      camera.layers.set(0); scene.overrideMaterial = null; scene.background = bg;
     }
     if (firstPerson) { renderer.clearDepth(); renderer.render(vmScene, vmCam); }
 
