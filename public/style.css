@@ -336,3 +336,24 @@ table.board td.k { text-align: right; }
 #card-banner { position: absolute; left: 50%; top: 150px; transform: translateX(-50%); white-space: nowrap; font-family: var(--font-display); font-size: 18px;
   letter-spacing: 1.5px; color: #5dffb4; text-shadow: 2px 2px 0 rgba(0,0,0,0.7); pointer-events: none; }
 .me-card .me-cards { font-family: var(--font-display); font-size: 16px; letter-spacing: 1.5px; color: #5dffb4; text-shadow: 0 0 6px rgba(93,255,180,0.5); margin-bottom: 2px; }
+
+/* operator abilities */
+.abil { position: absolute; right: max(16px, env(safe-area-inset-right, 0px)); bottom: calc(max(16px, env(safe-area-inset-bottom, 0px)) + 112px);
+  display: flex; gap: 6px; align-items: flex-end; font-family: var(--font-display); }
+.abil .op { align-self: center; font-size: 20px; letter-spacing: 2px; margin-right: 4px; text-shadow: 2px 2px 0 rgba(0,0,0,0.6); }
+.abil .a { position: relative; width: 104px; padding: 5px 8px; background: var(--panel); border: 2px solid var(--panel-edge); transform: skewX(-8deg); opacity: 0.75; overflow: hidden; }
+.abil .a > * { position: relative; transform: skewX(8deg); }
+.abil .a kbd { font-size: 10px; }
+.abil .a span { display: block; font-size: 15px; letter-spacing: 1px; }
+.abil .a b { font-size: 13px; color: var(--muted); }
+.abil .a.ready { opacity: 1; border-color: var(--good); }
+.abil .a.ready b { color: var(--good); }
+.abil .a.ult::before { content: ''; position: absolute; left: 0; bottom: 0; height: 4px; width: var(--fill, 0%); background: var(--yellow); }
+.abil .a.ult.ready { border-color: var(--yellow); box-shadow: 0 0 12px rgba(255, 210, 63, 0.45); }
+.abil .a.ult.ready b { color: var(--yellow); }
+#hud.practice .abil { bottom: calc(max(16px, env(safe-area-inset-bottom, 0px)) + 112px); }
+.me-card .fx { color: var(--yellow); }
+#op-desc { margin-top: 10px; font-size: 14px; line-height: 1.6; color: var(--text, #eaf2ff); }
+#op-desc b { display: block; font-family: var(--font-display); font-size: 16px; letter-spacing: 2px; }
+#op-desc kbd { font-size: 10px; }
+@media (max-width: 640px) { .abil .a { width: 84px; } .abil .op { display: none; } }

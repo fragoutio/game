@@ -76,8 +76,10 @@
     <div>
       <h2 class="title">LOCKER</h2>
       <p class="sub">Pick your fit. Other players see it in the arena.</p>
+      <div id="op-desc"></div>
     </div>
     <div class="rows">
+      <div class="mi row" data-op><span class="label">OPERATOR</span><span class="val"></span></div>
       <div class="mi row" data-name><span class="label">NAME</span><input id="name-input" maxlength="12" placeholder="PLAYER" autocomplete="off" spellcheck="false"></div>
       <div class="mi row" data-opt="jacket"><span class="label">JACKET</span><span class="val"></span></div>
       <div class="mi row" data-opt="pants"><span class="label">PANTS</span><span class="val"></span></div>
@@ -103,11 +105,11 @@
       <dt><kbd>1</kbd> / <kbd>2</kbd></dt><dd>Alternator / shotgun. The shotgun hits hard up close (4 health to the body, 5 to the head — a one-shot knockout) but drops to about 1 health from further away, won't fire at long range, and pumps between shots.</dd>
       <dt><kbd>Q</kbd> / <kbd>E</kbd> while crouched</dt><dd>Aim down the sight (1.3× zoom): steadier recoil, finer turning. Only works while crouched; stand up and you zoom back out.</dd>
       <dt><kbd>Q</kbd> / <kbd>E</kbd> while aiming</dt><dd>Lean left / right to shoot around corners. Tap the same key again to straighten up.</dd>
-      <dt><kbd>Space</kbd></dt><dd>Lower the sight (standing up lowers it too).</dd>
+      <dt><kbd>Space</kbd> / <kbd>Caps Lock</kbd></dt><dd>Your operator's tactical / ultimate ability (pick an operator in the LOCKER). Tactical has a cooldown; the ultimate charges over time and faster when you deal damage.</dd>
       <dt>Right <kbd>Shift</kbd></dt><dd>Zoom in / out of your sight (while crouched). Left Shift or C crouches.</dd>
       <dt><kbd>T</kbd></dt><dd>Switch the Alternator's sight: 1.3x HOG ring or 2.5x HCOG (zooms in more, turns slower while aiming). It's remembered.</dd>
       <dt><kbd>X</kbd></dt><dd>Upstairs, facing a gap in the floor or a window: rappel down (you can shoot on the way). X again lets go.</dd>
-      <dt>Ladders</dt><dd>Walk into a ladder to climb it, walk away from it to climb down, or press Space to let go and drop. Stairs are in the room corners.</dd>
+      <dt>Ladders</dt><dd>Walk into a ladder to climb it, walk away from it to climb down, or press Tab to let go and drop. Stairs are in the room corners.</dd>
       <dt>Grenades</dt><dd>Hold the key to see where it will go and aim it with the arrow keys. Let go to throw.</dd>
       <dt><kbd>R</kbd> Boomerang</dt><dd>Curves out and flies back to you. Explodes on an enemy. 10 s cooldown, reset instantly if it hits.</dd>
       <dt><kbd>G</kbd> Frag</dt><dd>Bounces off walls and the floor. Explodes after 3 s, or straight away if it touches an enemy. Finish them with your gun. 12 s cooldown.</dd>
@@ -186,12 +188,18 @@
     <div class="hp" id="me-hp"></div>
     <div class="fire" id="me-fire"><span class="lamp"></span><span>AUTO-FIRE</span></div>
     <div class="stance" id="me-stance"></div>
+    <div class="stance fx" id="me-fx"></div>
     <div class="recoil"><div id="me-recoil"></div></div>
   </div>
-  <div class="aim-hint" id="aim-hint"><kbd>W</kbd><kbd>S</kbd> walk · <kbd>A</kbd><kbd>D</kbd> strafe · <kbd>←</kbd><kbd>→</kbd> turn · <kbd>↑</kbd><kbd>↓</kbd> look · double-tap <kbd>W</kbd> run · left <kbd>Shift</kbd>/<kbd>C</kbd> crouch/slide · crouch + <kbd>Q</kbd>/<kbd>E</kbd> aim, then lean · <kbd>Space</kbd> lower · right <kbd>Shift</kbd> zoom · <kbd>1</kbd><kbd>2</kbd> weapons · <kbd>T</kbd> sight · hold <kbd>R</kbd><kbd>G</kbd><kbd>F</kbd> grenades · <kbd>X</kbd> rappel</div>
+  <div class="aim-hint" id="aim-hint"><kbd>W</kbd><kbd>S</kbd> walk · <kbd>A</kbd><kbd>D</kbd> strafe · <kbd>←</kbd><kbd>→</kbd> turn · <kbd>↑</kbd><kbd>↓</kbd> look · double-tap <kbd>W</kbd> run · left <kbd>Shift</kbd>/<kbd>C</kbd> crouch/slide · crouch + <kbd>Q</kbd>/<kbd>E</kbd> aim, then lean · right <kbd>Shift</kbd> zoom · <kbd>Space</kbd> tactical · <kbd>Caps</kbd> ultimate · <kbd>1</kbd><kbd>2</kbd> weapons · <kbd>T</kbd> sight · hold <kbd>R</kbd><kbd>G</kbd><kbd>F</kbd> grenades · <kbd>X</kbd> rappel</div>
   <div class="weapons" id="weapons">
     <div class="w active" data-w="rifle"><kbd>1</kbd><span>ALTERNATOR</span><em class="optic"><kbd>T</kbd><b id="optic-tag">1.3X</b></em></div>
     <div class="w" data-w="shotgun"><kbd>2</kbd><span>SHOTGUN</span><i class="pump"><i></i></i></div>
+  </div>
+  <div class="abil" id="abil">
+    <div class="op" id="abil-op">RIOT</div>
+    <div class="a" data-a="tac"><kbd>SPACE</kbd><span>TACTICAL</span><b></b></div>
+    <div class="a ult" data-a="ult"><kbd>CAPS</kbd><span>ULTIMATE</span><b></b></div>
   </div>
   <div class="gren" id="gren">
     <div class="g" data-g="boom"><kbd>R</kbd><span>BOOMERANG</span><b class="cd"></b></div>

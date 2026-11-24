@@ -206,6 +206,32 @@ function weaponKick(w, n) {
   return recoilKick(n);
 }
 const ROUNDS_TO_WIN = 3;
+// ---------- Operators ----------
+// One per class. tac = tactical (Space) with a cooldown in seconds; ult = ultimate (Caps Lock), charges over
+// `charge` seconds (dealing damage charges it faster).
+const OPS = {
+  riot:   { name: 'RIOT', cls: 'ASSAULT', color: '#ff6a2a',
+    tac: { name: 'OVERDRIVE', cd: 24, desc: 'Fire 60% faster for 6 s' },
+    ult: { name: 'BARRAGE', charge: 100, desc: 'Three blasts land along your aim after 1 s' } },
+  volt:   { name: 'VOLT', cls: 'SKIRMISHER', color: '#ffd23f',
+    tac: { name: 'BLINK', cd: 10, desc: 'Dash 5 m the way you are moving' },
+    ult: { name: 'RUSH', charge: 90, desc: 'Move 35% faster for 8 s' } },
+  echo:   { name: 'ECHO', cls: 'RECON', color: '#3fe0ff',
+    tac: { name: 'PULSE', cd: 20, desc: 'Reveal enemies within 19 m for 4 s' },
+    ult: { name: 'SWEEP', charge: 110, desc: 'Reveal every enemy for 6 s' } },
+  haven:  { name: 'HAVEN', cls: 'SUPPORT', color: '#5dffb4',
+    tac: { name: 'PATCH', cd: 22, desc: 'Heal you and nearby teammates 2 health' },
+    ult: { name: 'DOME', charge: 120, desc: 'A dome for 10 s that stops bullets going in or out' } },
+  warden: { name: 'WARDEN', cls: 'CONTROLLER', color: '#c58bff',
+    tac: { name: 'SMOKE', cd: 18, desc: 'A smoke cloud ahead of you for 8 s (blocks sight)' },
+    ult: { name: 'LOCKDOWN', charge: 110, desc: 'A 6 m zone for 9 s: enemies inside are slowed and revealed' } },
+};
+const OP_LIST = Object.keys(OPS);
+const cleanOp = o => (OPS[o] ? o : OP_LIST[(Math.random() * OP_LIST.length) | 0]);
+// Ability zones in the match being simulated (or shown): domes stop shots and sight crossing their edge, smoke
+// blocks sight through it. Set per match like curBroken.
+let curZones = null;
+function setZones(z) { curZones = z; }
 // Grenade tuning (px, ticks at 60 Hz). cd = cooldown after a throw.
 const GREN = {
   gravity: 0.35,
@@ -269,6 +295,16 @@ function clear3(x1, y1, z1, x2, y2, z2) {
       const t = sp[0] + (sp[1] - sp[0]) * k / 6, px = x1 + dx * t, py = y1 + dy * t, pz = z1 + dz * t;
       if (pz < rampAt(px, py) - 1) return false;
     }
+  }
+  if (curZones) for (const zn of curZones) {
+    if (zn.k !== 'dome' && zn.k !== 'smoke') continue;
+    const cz = zn.k === 'smoke' ? 30 : 0;
+    const in1 = Math.hypot(x1 - zn.x, y1 - zn.y, z1 - cz) < zn.r, in2 = Math.hypot(x2 - zn.x, y2 - zn.y, z2 - cz) < zn.r;
+    if (zn.k === 'dome') { if (in1 !== in2) return false; continue; }
+    // smoke: blocked if the segment passes through the cloud
+    const L2 = dx * dx + dy * dy + dz * dz || 1;
+    const t = clamp(((zn.x - x1) * dx + (zn.y - y1) * dy + (cz - z1) * dz) / L2, 0, 1);
+    if (Math.hypot(x1 + dx * t - zn.x, y1 + dy * t - zn.y, z1 + dz * t - cz) < zn.r) return false;
   }
   if ((z1 - UP.floor) * (z2 - UP.floor) < 0) {   // passes through the balcony floor level
     const t = (UP.floor - z1) / dz, px = x1 + dx * t, py = y1 + dy * t;
@@ -393,10 +429,10 @@ function cleanLook(look) {
   }
   return out;
 }
-const publicPlayers = m => m.players.map(o => ({ id: o.id, name: o.name, team: o.team, look: o.look }));
+const publicPlayers = m => m.players.map(o => ({ id: o.id, name: o.name, team: o.team, look: o.look, op: o.op }));
 
-function makePlayer(team, name, client, look) {
-  return { id: nextId++, team, name, client, bot: !client, look: cleanLook(look), x: 0, y: 0, hp: P.hp, alive: true,
+function makePlayer(team, name, client, look, op) {
+  return { id: nextId++, team, name, client, bot: !client, look: cleanLook(look), op: cleanOp(op), tac: 0, ult: 0, fx: {}, spdMul: 1, x: 0, y: 0, hp: P.hp, alive: true,
     input: { f: 0, s: 0, yaw: team === 'A' ? 0 : Math.PI, pitch: 0, run: false, crouch: false }, yaw: 0, pitch: 0, cool: 0, kills: 0, burst: 0, sinceShot: 99,
     stance: 'stand', running: false, slideT: 0, slideCd: 0, slideX: 0, slideY: 0, cd: { boom: 0, frag: 0, therm: 0 }, throws: [], respawnT: 0,
     weapon: 'rifle', switchT: 0, z: 0, vz: 0,
@@ -424,7 +460,7 @@ function startMatch(mode, clients) {
   const players = [];
   for (const team of ['A', 'B']) for (let i = 0; i < per; i++) {
     const c = slots[team][i];
-    players.push(makePlayer(team, c ? c.name : botName(), c || null, c ? c.look : null));
+    players.push(makePlayer(team, c ? c.name : botName(), c || null, c ? c.look : null, c ? c.op : null));
   }
   const match = { mode, players, events: [], projectiles: [], fires: [], nextProj: 1, broken: new Set(), panelHp: new Map(), score: { A: 0, B: 0 }, round: 0, phase: 'countdown', phaseT: 120, tick: 0, over: false };
   matches.add(match);
@@ -438,6 +474,8 @@ function startMatch(mode, clients) {
 function resetRound(m) {
   m.round++; m.projectiles = []; m.fires = []; m.phase = 'countdown'; m.phaseT = 180; // 3 s: "3, 2, 1, FIGHT"
   m.broken = new Set(); m.panelHp = new Map(); m.roundReason = null;   // panels are rebuilt every round
+  m.zones = []; m.strikes = [];
+  for (const p of m.players) { p.fx = {}; p.tac = 0; p.dashT = 0; }
   if (m.mode === 'extraction') {
     // like Siege: teams swap attack and defence every round
     m.attack = m.round % 2 === 1 ? 'A' : 'B';
@@ -510,6 +548,17 @@ function stepMovement(p, mx, my, run, crouch, runOk, canMove, ads = false) {
     return;
   }
   if (!canMove) { settle(p); return; }
+  // Blink (VOLT): a quick dash, stopped by walls
+  if (p.dashT > 0) {
+    p.dashT--;
+    const z = p.z || 0;
+    for (let k = 0; k < 3; k++) {
+      const nx = p.x + p.dashX * 5, ny = p.y + p.dashY * 5;
+      if (!blockedAt(nx, ny, P.r, z) && supportAt(nx, ny, z) <= z + 14 && !stairBlocks(nx, ny, z)) { p.x = nx; p.y = ny; } else { p.dashT = 0; break; }
+    }
+    settle(p);
+    return;
+  }
   // Ladders: walk toward the wall/floor edge to climb, away from it to climb down. Space lets go (you drop).
   if (p.dropT > 0) p.dropT--;
   if (p.wantDrop) {
@@ -538,7 +587,7 @@ function stepMovement(p, mx, my, run, crouch, runOk, canMove, ads = false) {
     dx = p.slideX; dy = p.slideY;
   } else {
     if (!len) { settle(p); return; }   // standing still: still fall if there's nothing under you (e.g. let go of a ladder)
-    spd = (p.running ? P.run : p.stance === 'crouch' ? P.crouchSpeed : P.walk) * (ads ? P.adsSpeed : 1);
+    spd = (p.running ? P.run : p.stance === 'crouch' ? P.crouchSpeed : P.walk) * (ads ? P.adsSpeed : 1) * (p.spdMul || 1);
     dx = mx / len; dy = my / len;
   }
   const ox = p.x, oy = p.y, z = p.z || 0;
@@ -803,6 +852,11 @@ function botThink(m, b) {
     const carrying = goal && goal.mode === 'go' && m.gem && m.gem.carrier === b.id;
     if (carrying) { inp.mx = 0; inp.my = 0; inp.crouch = false; followPath(b, inp, goal.x, goal.y); aimAt(); }
     if (goal && goal.mode === 'hold') { inp.mx = 0; inp.my = 0; }
+    if (br.seen > br.react && OPS[b.op]) {
+      const want = b.op === 'haven' ? b.hp <= 60 : true;
+      if (b.tac <= 0 && want && Math.random() < 0.012) br.useTac = true;
+      if (b.ult >= OPS[b.op].ult.charge * 60 && Math.random() < 0.008) br.useUlt = true;
+    }
     if (b.weapon !== 'shotgun' && dist < 100) inp.weapon = 'shotgun';
     else if (b.weapon === 'shotgun' && dist > 170) inp.weapon = 'rifle';
     // back off when hurt (or now and then after a long fight), unless it's holding the objective
@@ -922,6 +976,7 @@ function touchingEnemy(m, pr, pad) {
 function damage(m, o, amount, owner, src, head, x, y, z) {
   if (!o.alive) return;
   o.hp -= amount;
+  if (owner && owner !== o && OPS[owner.op]) owner.ult = Math.min(OPS[owner.op].ult.charge * 60, owner.ult + amount * 6);   // 1 health of damage = 2 s of charge
   m.events.push(['h', o.id, Math.round(x), Math.round(y), Math.round(z), owner ? owner.id : 0, head ? 1 : 0, src]);
   if (o.hp <= 0) {
     o.alive = false; o.hp = 0;
@@ -1081,9 +1136,9 @@ function dummyThink(m, d) {
   d.yaw = inp.yaw;
   return inp;
 }
-function createPractice(sendFn, name, look) {
+function createPractice(sendFn, name, look, op) {
   const client = { send: sendFn, name: String(name || 'PLAYER').slice(0, 12), look, match: null, player: null };
-  const me = makePlayer('A', client.name, client, look);
+  const me = makePlayer('A', client.name, client, look, op);
   const players = [me];
   for (let i = 0; i < 6; i++) { const d = makePlayer('B', 'TARGET', null, DUMMY_LOOK); d.brain.dummy = true; players.push(d); }
   const m = { mode: 'practice', practice: true, players, events: [], projectiles: [], fires: [], nextProj: 1, broken: new Set(), panelHp: new Map(),
@@ -1113,6 +1168,9 @@ function handlePlay(client, msg) {
       if (Number.isFinite(+msg.x) && Number.isFinite(+msg.y)) p.claim = [+msg.x, +msg.y];
       const rap = +msg.rap || 0;
       if (rap > (p.rapSeen || 0)) { p.rapSeen = rap; p.wantRap = true; }
+      const tac = +msg.tac || 0, ult = +msg.ult || 0;
+      if (tac > (p.tacSeen || 0)) { p.tacSeen = tac; p.wantTac = true; }
+      if (ult > (p.ultSeen || 0)) { p.ultSeen = ult; p.wantUlt = true; }
       const drop = +msg.drop || 0;
       if (drop > (p.dropSeen || 0)) { p.dropSeen = drop; p.wantDrop = true; }
     }
@@ -1200,6 +1258,62 @@ function stepExtraction(m) {
   }
 }
 
+// direction to blink: the way you're moving, or where you're facing
+function startDash(p, mx, my) {
+  const len = Math.hypot(mx, my);
+  const dx = len ? mx / len : Math.cos(p.yaw || 0), dy = len ? my / len : Math.sin(p.yaw || 0);
+  p.dashT = 8; p.dashX = dx; p.dashY = dy;
+}
+function useTac(m, p, mx, my) {
+  const op = OPS[p.op];
+  if (!op || p.tac > 0 || !p.alive) return;
+  p.tac = op.tac.cd * 60;
+  const enemies = m.players.filter(o => o.alive && o.team !== p.team);
+  if (p.op === 'riot') p.fx.over = 360;
+  else if (p.op === 'volt') { startDash(p, mx, my); p.rap = null; }
+  else if (p.op === 'echo') for (const o of enemies) { if (Math.hypot(o.x - p.x, o.y - p.y) < 450) o.fx.reveal = Math.max(o.fx.reveal || 0, 240); }
+  else if (p.op === 'haven') {
+    for (const o of m.players) if (o.alive && o.team === p.team && Math.hypot(o.x - p.x, o.y - p.y) < 120) { o.hp = Math.min(P.hp, o.hp + 40); m.events.push(['hl', o.id]); }
+  } else if (p.op === 'warden') {
+    const hit = rayWall(p.x, p.y, Math.cos(p.yaw), Math.sin(p.yaw), 140), d = hit ? Math.max(0, hit.t - 24) : 130;
+    m.zones.push({ k: 'smoke', x: p.x + Math.cos(p.yaw) * d, y: p.y + Math.sin(p.yaw) * d, r: 64, t: 480, team: p.team, owner: p.id });
+  }
+  m.events.push(['ab', p.id, 0, p.op]);
+}
+function useUlt(m, p) {
+  const op = OPS[p.op];
+  if (!op || p.ult < op.ult.charge * 60 || !p.alive) return;
+  p.ult = 0;
+  if (p.op === 'riot') {   // three blasts along the aim, stopping short of the first wall
+    const hit = rayWall(p.x, p.y, Math.cos(p.yaw), Math.sin(p.yaw), 400), max = hit ? hit.t - 20 : 400;
+    [140, 220, 300].forEach((d, k) => { const dd = Math.min(d, max - (2 - k) * 40); if (dd > 30) m.strikes.push({ x: p.x + Math.cos(p.yaw) * dd, y: p.y + Math.sin(p.yaw) * dd, t: 60 + k * 12, owner: p.id, team: p.team }); });
+  } else if (p.op === 'volt') p.fx.rush = 480;
+  else if (p.op === 'echo') { for (const o of m.players) if (o.alive && o.team !== p.team) o.fx.reveal = Math.max(o.fx.reveal || 0, 360); }
+  else if (p.op === 'haven') m.zones.push({ k: 'dome', x: p.x, y: p.y, r: 70, t: 600, team: p.team, owner: p.id });
+  else if (p.op === 'warden') m.zones.push({ k: 'lock', x: p.x, y: p.y, r: 140, t: 540, team: p.team, owner: p.id });
+  m.events.push(['ab', p.id, 1, p.op]);
+}
+// every tick: cooldowns, charge, effects, zones, barrage blasts
+function stepAbilities(m) {
+  const fight = m.phase === 'fight';
+  for (const p of m.players) {
+    const op = OPS[p.op]; if (!op) continue;
+    if (fight && p.tac > 0) p.tac--;
+    if (fight && p.alive && p.ult < op.ult.charge * 60) p.ult++;
+    for (const k in p.fx) if (p.fx[k] > 0) p.fx[k]--;
+  }
+  m.zones = m.zones.filter(z => --z.t > 0);
+  for (const z of m.zones) if (z.k === 'lock') for (const o of m.players) {
+    if (o.alive && o.team !== z.team && Math.hypot(o.x - z.x, o.y - z.y) < z.r) { o.fx.slow = 6; o.fx.reveal = Math.max(o.fx.reveal || 0, 6); }
+  }
+  for (const p of m.players) p.spdMul = (p.fx.rush > 0 ? 1.35 : 1) * (p.fx.slow > 0 ? 0.6 : 1);
+  for (const s of m.strikes) if (--s.t <= 0) {
+    explode(m, { x: s.x, y: s.y, z: supportAt(s.x, s.y, 200) + 4, owner: s.owner, team: s.team }, 62, 75, DMG_SRC.frag);
+    s.done = true;
+  }
+  m.strikes = m.strikes.filter(s => !s.done);
+}
+
 function switchWeapon(p, w) {
   if (!WEAPONS[w] || w === p.weapon) return;
   p.weapon = w; p.switchT = SWITCH_TICKS; p.burst = 0; p.onT = 0;
@@ -1208,6 +1322,9 @@ function switchWeapon(p, w) {
 function stepMatch(m) {
   m.tick++;
   curBroken = m.broken || null;   // collision for this match
+  if (!m.zones) m.zones = []; if (!m.strikes) m.strikes = [];
+  curZones = m.zones;
+  stepAbilities(m);
   if (m.phase === 'countdown') { if (--m.phaseT <= 0) m.phase = 'fight'; }
   else if (m.phase === 'roundEnd') {
     if (--m.phaseT <= 0) {
@@ -1246,6 +1363,9 @@ function stepMatch(m) {
       if (m.phase !== 'countdown' && !p.rap && !p.onLadder && Math.hypot(cx - p.x, cy - p.y) < P.claimMax && !blockedAt(cx, cy, P.r, p.z || 0) && supportAt(cx, cy, p.z || 0) >= (p.z || 0) - 2) { p.x = cx; p.y = cy; }
     }
     if (m.phase === 'fight') for (const w of wants) throwGrenade(m, p, w);
+    if (p.bot) { if (p.brain.useTac) useTac(m, p, mx, my); if (p.brain.useUlt) useUlt(m, p); p.brain.useTac = p.brain.useUlt = false; }
+    if (p.wantTac) { p.wantTac = false; if (m.phase === 'fight') useTac(m, p, mx, my); }
+    if (p.wantUlt) { p.wantUlt = false; if (m.phase === 'fight') useUlt(m, p); }
 
     if (p.cool > 0) p.cool--;
     if (++p.sinceShot > P.recoilReset) p.burst = 0;
@@ -1263,7 +1383,7 @@ function stepMatch(m) {
     if (p.switchT > 0) p.switchT--;
     if (pan && p.cool <= 0 && p.switchT <= 0 && p.onT > P.fireDelay) {
       const wn = p.weapon || 'rifle', W = WEAPONS[wn];
-      p.cool = W.cooldown; p.sinceShot = 0;
+      p.cool = W.cooldown * (p.fx.over > 0 ? 0.62 : 1); p.sinceShot = 0;
       const [ox, oy] = eyePos(p.x, p.y, p.yaw, p.lean || 0);
       const ex = Math.round(ox + Math.cos(p.yaw) * pan.t), ey = Math.round(oy + Math.sin(p.yaw) * pan.t);
       m.events.push(['s', p.id, p.burst, ex, ey, Math.round(pan.h), W.code]);
@@ -1274,7 +1394,7 @@ function stepMatch(m) {
     const hit = tgt && p.cool <= 0 && p.switchT <= 0 && (p.bot || p.onT > P.fireDelay) ? tgt : null;
     if (hit) {
       const wn = p.weapon || 'rifle', W = WEAPONS[wn];
-      p.cool = W.cooldown; p.sinceShot = 0;
+      p.cool = W.cooldown * (p.fx.over > 0 ? 0.62 : 1); p.sinceShot = 0;
       const o = hit.c, d = hit.along;
       const [ox, oy] = eyePos(p.x, p.y, p.yaw, p.lean || 0);
       const ex = Math.round(ox + Math.cos(p.yaw) * d), ey = Math.round(oy + Math.sin(p.yaw) * d);
@@ -1305,7 +1425,10 @@ function stepMatch(m) {
       ex: g ? { attack: m.attack, gem: [{ home: 0, carried: 1, dropped: 2 }[g.state], Math.round(g.x), Math.round(g.y), g.carrier, Math.round(g.prog / EXTRACT.extractTicks * 100)],
         time: Math.max(0, Math.ceil(m.timeLeft / 60)), cards: (m.cards || []).map(c => [c.id, r1(c.x), r1(c.y), r1(c.z), c.carrier]) } : null,
       players: m.players.map(p => [p.id, r1(p.x), r1(p.y), p.hp, p.alive ? 1 : 0, r3(p.yaw), r3(p.pitch), p.kills,
-        STANCE_CODE[p.stance] + (p.running ? 4 : 0) + (p.ads ? 8 : 0) + (p.lean < 0 ? 16 : p.lean > 0 ? 32 : 0) + (p.rap ? 64 : 0) + (p.onLadder ? 128 : 0), Math.ceil(p.cd.boom / 6), Math.ceil(p.cd.frag / 6), Math.ceil(p.cd.therm / 6), WEAPONS[p.weapon || 'rifle'].code + (p.switchT > 0 ? 2 : 0), r1(p.z || 0), p.alive ? 0 : Math.ceil((p.respawnT || 0) / 60)]),
+        STANCE_CODE[p.stance] + (p.running ? 4 : 0) + (p.ads ? 8 : 0) + (p.lean < 0 ? 16 : p.lean > 0 ? 32 : 0) + (p.rap ? 64 : 0) + (p.onLadder ? 128 : 0), Math.ceil(p.cd.boom / 6), Math.ceil(p.cd.frag / 6), Math.ceil(p.cd.therm / 6), WEAPONS[p.weapon || 'rifle'].code + (p.switchT > 0 ? 2 : 0), r1(p.z || 0), p.alive ? 0 : Math.ceil((p.respawnT || 0) / 60), Math.ceil((p.tac || 0) / 60),
+        OPS[p.op] ? Math.floor(p.ult / (OPS[p.op].ult.charge * 60) * 100) : 0,
+        (p.fx.over > 0 ? 1 : 0) + (p.fx.rush > 0 ? 2 : 0) + (p.fx.reveal > 0 ? 4 : 0) + (p.fx.slow > 0 ? 8 : 0)]),
+      zones: (m.zones || []).map(z => [z.k, r1(z.x), r1(z.y), z.r, Math.ceil(z.t / 60), z.team]),
       proj: m.projectiles.map(pr => [pr.id, KIND_CODE[pr.kind], r1(pr.x), r1(pr.y), r1(pr.z), pr.team]),
       fires: m.fires.map(f => [f.id, Math.round(f.x1), Math.round(f.y1), Math.round(f.x2), Math.round(f.y2), f.t, f.team, Math.round(f.z || 0)]),
       ev: m.events };
@@ -1322,6 +1445,7 @@ function connect(sendFn) {
   const setProfile = msg => {
     if (msg.name != null) client.name = String(msg.name || 'Player').replace(/[^\w \-]/g, '').slice(0, 12) || 'Player';
     if (msg.look) client.look = cleanLook(msg.look);
+    if (msg.op && OPS[msg.op]) client.op = msg.op;
   };
   return {
     receive(msg) {
@@ -1388,5 +1512,5 @@ function start(opts = {}) {
 
 // identifies the map, so a client only plays on a server with the same one
 const MAP_ID = MAP.w + 'x' + MAP.h + '-' + MAP.walls.length + '-' + UP.ladders.length;
-return { MAP_ID, slabRects, onSlab, ladderAt, rappelSpot, connect, start, tick, matchmake, createPractice, MAP, P, LOOK_SIZES, STANCES, KINDS, recoilKick, blocked, lineOfSight, stepMovement, castRay, predictThrow, segmentClear, eyePos, setBroken, panelUnder, EXTRACT, MODES, clear3, supportAt, blockedAt, _matches: matches, WEAPONS, WEAPON_BY_CODE, weaponDamage, weaponKick, get botFillMs() { return BOT_FILL_MS; } };
+return { OPS, OP_LIST, setZones, startDash, MAP_ID, slabRects, onSlab, ladderAt, rappelSpot, connect, start, tick, matchmake, createPractice, MAP, P, LOOK_SIZES, STANCES, KINDS, recoilKick, blocked, lineOfSight, stepMovement, castRay, predictThrow, segmentClear, eyePos, setBroken, panelUnder, EXTRACT, MODES, clear3, supportAt, blockedAt, _matches: matches, WEAPONS, WEAPON_BY_CODE, weaponDamage, weaponKick, get botFillMs() { return BOT_FILL_MS; } };
 });

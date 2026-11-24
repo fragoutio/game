@@ -19,7 +19,7 @@
     get(k, d) { try { const v = localStorage.getItem('fragout-' + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
     set(k, v) { try { localStorage.setItem('fragout-' + k, JSON.stringify(v)); } catch { /* storage blocked */ } },
   };
-  const profile = Object.assign({ name: '', optic: 'hog', look: { jacket: 0, pants: 0, head: 4, headColor: 0, skin: 0 } }, store.get('profile', {}));
+  const profile = Object.assign({ name: '', optic: 'hog', op: 'riot', look: { jacket: 0, pants: 0, head: 4, headColor: 0, skin: 0 } }, store.get('profile', {}));
   const settings = Object.assign({ quality: 'medium', sound: true, fps: false }, store.get('settings', {}));
 
   // ---------- Renderer ----------
@@ -449,7 +449,7 @@
     if (action === 'up' || action === 'down') { sel = (sel + (action === 'up' ? -1 : 1) + it.length) % it.length; sfx.move(); highlight(); }
     else if (action === 'left' || action === 'right') {
       const d = action === 'left' ? -1 : 1;
-      if (cur.dataset.opt || cur.dataset.set) { cycle(cur, d); sfx.move(); }
+      if (cur.dataset.opt || cur.dataset.set || cur.hasAttribute('data-op')) { cycle(cur, d); sfx.move(); }
       else { sel = (sel + d + it.length) % it.length; sfx.move(); highlight(); }
     } else if (action === 'ok') activate(cur);
     else if (action === 'back') back();
@@ -458,7 +458,7 @@
     if (!el) return;
     if (el.dataset.go) { sfx.select(); show(el.dataset.go); }
     else if (el.dataset.mode) { sfx.select(); queueFor(el.dataset.mode); }
-    else if (el.dataset.opt || el.dataset.set) { cycle(el, 1); sfx.move(); }
+    else if (el.dataset.opt || el.dataset.set || el.hasAttribute('data-op')) { cycle(el, 1); sfx.move(); }
     else if (el.hasAttribute('data-name')) nameInput.focus();
     else if (el.hasAttribute('data-cancel')) cancelQueue();
     else if (el.hasAttribute('data-pcreate')) partyCreate();
@@ -488,6 +488,11 @@
 
   // Locker & settings
   function cycle(el, d) {
+    if (el.hasAttribute('data-op')) {
+      const L = Core.OP_LIST, i = Math.max(0, L.indexOf(profile.op));
+      profile.op = L[(i + d + L.length) % L.length]; store.set('profile', profile); refreshLocker(); profileChanged();
+      return;
+    }
     if (el.dataset.opt) {
       const k = el.dataset.opt, n = Chars.LOOKS[k].length;
       profile.look[k] = ((profile.look[k] | 0) + d + n) % n;
@@ -501,6 +506,19 @@
   }
   function refreshLocker() {
     nameInput.value = profile.name;
+    {   // operator
+      const op = Core.OPS[profile.op] || Core.OPS.riot, val = document.querySelector('#screen-locker [data-op] .val');
+      val.innerHTML = '';
+      const l = document.createElement('span'); l.className = 'arrow'; l.textContent = '◀';
+      const r = document.createElement('span'); r.className = 'arrow'; r.textContent = '▶';
+      const n = document.createElement('span'); n.textContent = op.name; n.style.color = op.color;
+      val.append(l, n, r);
+      const d = $('op-desc'); d.innerHTML = '';
+      const c = document.createElement('b'); c.textContent = op.cls; c.style.color = op.color;
+      const t = document.createElement('div'); t.innerHTML = '<kbd>SPACE</kbd> '; t.append(op.tac.name + ' · ' + op.tac.desc + ` (${op.tac.cd} s)`);
+      const u = document.createElement('div'); u.innerHTML = '<kbd>CAPS</kbd> '; u.append(op.ult.name + ' · ' + op.ult.desc);
+      d.append(c, t, u);
+    }
     for (const row of document.querySelectorAll('#screen-locker [data-opt]')) {
       const k = row.dataset.opt, opt = Chars.LOOKS[k][profile.look[k] | 0];
       const val = row.querySelector('.val');
@@ -539,7 +557,7 @@
   function profileChanged() {
     if (!party) return;
     clearTimeout(profileTimer);
-    profileTimer = setTimeout(() => send({ t: 'hello', name: profile.name || 'PLAYER', look: profile.look }), 300);
+    profileTimer = setTimeout(() => send({ t: 'hello', name: profile.name || 'PLAYER', look: profile.look, op: profile.op }), 300);
   }
   function refreshParty() {
     const inP = !!(party && party.code);
@@ -625,7 +643,7 @@
   const keys = new Set(), tapped = new Set();
   const KEYMAP = { ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down', ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right',
     Enter: 'ok', NumpadEnter: 'ok', Space: 'ok', Escape: 'back', Backspace: 'back' };
-  const BLOCK = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'Tab', 'Backspace']);
+  const BLOCK = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'Tab', 'Backspace', 'CapsLock']);
   addEventListener('keydown', e => {
     ac();
     if (document.activeElement && document.activeElement.tagName === 'INPUT') {
@@ -648,7 +666,9 @@
       else if (e.code === 'KeyX' && !e.repeat) { me.rapN = (me.rapN || 0) + 1; me.wantRap = true; }
       else if (GREN_KEYS[e.code] && !e.repeat) startAim(GREN_KEYS[e.code]);
       else if ((e.code === 'KeyQ' || e.code === 'KeyE') && !e.repeat) sightKey(e.code === 'KeyQ' ? -1 : 1);
-      else if (e.code === 'Space') { if (me.onLadder) { me.dropN = (me.dropN || 0) + 1; me.wantDrop = true; } else lowerSight(); }   // Space: let go of a ladder, or lower the sight
+      else if (e.code === 'Space' && !e.repeat) useTactical();
+      else if (e.code === 'CapsLock' && !e.repeat) useUltimate();
+      else if (e.code === 'Tab' && !e.repeat) { if (me.onLadder) { me.dropN = (me.dropN || 0) + 1; me.wantDrop = true; } }   // Tab: let go of a ladder
       else if (e.code === 'Digit1' || e.code === 'Numpad1') pickWeapon('rifle');
       else if (e.code === 'Digit2' || e.code === 'Numpad2') pickWeapon('shotgun');
       return;
@@ -743,7 +763,7 @@
     if (!connected) { toast('Connecting to the server…'); return; }
     if (party && party.code && !party.leader) { sfx.denied(); toast('Waiting for the party leader to start a match'); show('party'); return; }
     if (mode === '2v2' && !(party && party.code)) { sfx.denied(); toast('2v2 is for parties: make one with PARTY on the main menu'); show('mode'); return; }
-    send({ t: 'queue', mode, name: profile.name || 'PLAYER', look: profile.look });
+    send({ t: 'queue', mode, name: profile.name || 'PLAYER', look: profile.look, op: profile.op });
     enterQueue(mode);
   }
   function enterQueue(mode) {
@@ -769,7 +789,7 @@
     actors.clear(); match = null; prevState = curState = null; matchOver = false;
     vmScene.remove(vm.group); $('feed').innerHTML = '';
     clearGrenadeFx();
-    resetPanels(); clearCards(); gemMesh.visible = false; $('gem-marker').hidden = true; $('ex-hud').hidden = true; $('carry-banner').hidden = true;
+    resetPanels(); clearCards(); updateZones([]); gemMesh.visible = false; $('gem-marker').hidden = true; $('ex-hud').hidden = true; $('carry-banner').hidden = true;
   }
   function clearMatchIfOver() { if (matchOver) clearMatch(); }
 
@@ -789,6 +809,7 @@
     clearMatch();
     match = msg; matchOver = false; lastPhase = ''; lastRound = 0;
     const mine = msg.players.find(p => p.id === msg.you);
+    me.op = mine.op || profile.op; me.tacLeft = 0; me.ultPct = 0; me.spdMul = 1; me.dashT = 0;
     match.myTeam = mine.team;
     for (const p of msg.players) {
       const ch = Chars.buildCharacter(p.look, TEAM[p.team].hex);
@@ -866,6 +887,8 @@
     if (curAt) interval = interval * 0.9 + Math.min(100, now - curAt) * 0.1;
     prevState = curState; curState = msg; curAt = now;
     const row = msg.players.find(p => p[0] === match.you);
+    updateAbilityHud(row);
+    updateZones(msg.zones);
     // new round: snap your view and position back to your spawn
     if (row && msg.round !== lastRound) {
       lastRound = msg.round;
@@ -899,6 +922,15 @@
       if (ev[0] === 'gd') { toast('The gem was dropped!'); sfx.denied(); continue; }
       if (ev[0] === 'gr') { toast('The gem was returned to the middle'); continue; }
       if (ev[0] === 'gw') { continue; }
+      if (ev[0] === 'ab') {
+        const a = actors.get(ev[1]), op = Core.OPS[ev[3]]; if (!op) continue;
+        const nm = ev[2] ? op.ult.name : op.tac.name;
+        if (ev[1] === match.you) { if (ev[2]) announce(nm, op.ult.desc, op.color, 1200); sfx.ready(); }
+        else if (ev[2] && a) toast(`${a.info.name} used ${nm}`);
+        if (ev[3] === 'volt' && ev[2] === 0 && a) burst(a.x, 1, a.z, 0xffd23f, 12, 3);
+        continue;
+      }
+      if (ev[0] === 'hl') { if (ev[1] === match.you) { toast('Patched up +2 health'); sfx.ready(); } continue; }
       if (ev[0] === 'cp') { const a = actors.get(ev[1]), d = actors.get(ev[2]); if (ev[1] === match.you) { announce('REBOOT CARD', `${d ? d.info.name : 'A teammate'} · take it to the back of your base`, '#5dffb4', 1800); sfx.ready(); } else if (ev[2] === match.you) toast(`${a ? a.info.name : 'A teammate'} has your reboot card`); continue; }
       if (ev[0] === 'rb') { const a = actors.get(ev[1]), d = actors.get(ev[2]); toast(`${a ? a.info.name : 'Someone'} rebooted ${d ? d.info.name : 'a teammate'}!`); sfx.ready(); if (ev[2] === match.you) announce('REBOOTED', 'back in the fight', 'var(--good)', 1200); continue; }
       if (ev[0] === 'r') { if (ev[1] === match.you) { sfx.ready(); flashClass(document.querySelector('#gren [data-g="boom"]'), 'ready', 600); } continue; }
@@ -1026,7 +1058,7 @@
   function sendInput(now) {
     if (now - lastInput < 33) return;
     lastInput = now;
-    sendPlay({ t: 'input', weapon: me.weapon || 'rifle', f: lastMove.f, s: lastMove.s, run: lastMove.run, crouch: lastMove.crouch, ads: !!me.ads, lean: me.lean || 0, rap: me.rapN || 0, drop: me.dropN || 0, x: Math.round(me.x * 10) / 10, y: Math.round(me.y * 10) / 10, yaw: Math.round(me.yaw * 1000) / 1000, pitch: Math.round(me.pitch * 1000) / 1000 });
+    sendPlay({ t: 'input', weapon: me.weapon || 'rifle', f: lastMove.f, s: lastMove.s, run: lastMove.run, crouch: lastMove.crouch, ads: !!me.ads, lean: me.lean || 0, rap: me.rapN || 0, drop: me.dropN || 0, tac: me.tacN || 0, ult: me.ultN || 0, x: Math.round(me.x * 10) / 10, y: Math.round(me.y * 10) / 10, yaw: Math.round(me.yaw * 1000) / 1000, pitch: Math.round(me.pitch * 1000) / 1000 });
   }
 
   // what's under the centre crosshair? Same test as the server (core.castRay): body height depends on
@@ -1053,7 +1085,7 @@
     stopPractice();
     practiceStart = performance.now(); practiceKOs = practiceHeads = 0;
     $('pb-score').textContent = '0';
-    const run = Core.createPractice(msg => setTimeout(() => { if (practiceRun === run) onMessage(msg); }, 0), profile.name || 'PLAYER', profile.look);
+    const run = Core.createPractice(msg => setTimeout(() => { if (practiceRun === run) onMessage(msg); }, 0), profile.name || 'PLAYER', profile.look, profile.op);
     practiceRun = run;
   }
   function stopPractice() { if (practiceRun) { practiceRun.stop(); practiceRun = null; } }
@@ -1246,6 +1278,68 @@
     for (const el of document.querySelectorAll('#weapons .w')) el.classList.toggle('active', el.dataset.w === me.weapon);
     $('optic-tag').textContent = profile.optic === 'hcog' ? '2.5X' : '1.3X';
     if (vm.optics) { vm.optics.hog.visible = profile.optic !== 'hcog'; vm.optics.hcog.visible = profile.optic === 'hcog'; }
+  }
+
+  // ---------- Operator abilities: Space tactical, Caps Lock ultimate ----------
+  function useTactical() {
+    const op = Core.OPS[me.op]; if (!op || !me.alive) return;
+    if (me.tacLeft > 0) { sfx.denied(); toast(`${op.tac.name} ready in ${me.tacLeft} s`); return; }
+    me.tacN = (me.tacN || 0) + 1;
+    if (me.op === 'volt') {   // blink right away on this computer too (the server does the same)
+      const c = Math.cos(me.yaw), sn = Math.sin(me.yaw);
+      Core.startDash(me, c * lastMove.f - sn * lastMove.s, sn * lastMove.f + c * lastMove.s);
+    }
+    me.tacLeft = op.tac.cd;   // until the server says otherwise
+  }
+  function useUltimate() {
+    const op = Core.OPS[me.op]; if (!op || !me.alive) return;
+    if ((me.ultPct || 0) < 100) { sfx.denied(); toast(`${op.ult.name} charging: ${me.ultPct || 0}%`); return; }
+    me.ultN = (me.ultN || 0) + 1;
+  }
+  function updateAbilityHud(row) {
+    const op = Core.OPS[me.op]; if (!op || !row) return;
+    me.tacLeft = row[15] || 0; me.ultPct = row[16] || 0;
+    const fx = row[17] || 0;
+    me.spdMul = (fx & 2 ? 1.35 : 1) * (fx & 8 ? 0.6 : 1);
+    const t = document.querySelector('#abil [data-a="tac"]'), u = document.querySelector('#abil [data-a="ult"]');
+    t.querySelector('span').textContent = op.tac.name; u.querySelector('span').textContent = op.ult.name;
+    t.querySelector('b').textContent = me.tacLeft > 0 ? me.tacLeft + 's' : 'READY';
+    u.querySelector('b').textContent = me.ultPct >= 100 ? 'READY' : me.ultPct + '%';
+    t.classList.toggle('ready', !me.tacLeft); u.classList.toggle('ready', me.ultPct >= 100);
+    u.style.setProperty('--fill', me.ultPct + '%');
+    $('abil-op').textContent = op.name; $('abil-op').style.color = op.color;
+    $('me-fx').textContent = [fx & 1 ? 'OVERDRIVE' : '', fx & 2 ? 'RUSH' : '', fx & 8 ? 'SLOWED' : '', fx & 4 ? 'REVEALED' : ''].filter(Boolean).join(' · ');
+  }
+  // ability zones in the world: dome, smoke cloud, lockdown ring
+  const zoneMeshes = new Map();
+  function zoneMesh(k, r, team) {
+    const g = new THREE.Group(), col = k === 'smoke' ? 0x9aa0a8 : k === 'lock' ? 0xc58bff : TEAM[team].hex;
+    if (k === 'dome') {
+      g.add(new THREE.Mesh(new THREE.SphereGeometry(r * S, 18, 9, 0, Math.PI * 2, 0, Math.PI / 2), basic(col, { transparent: true, opacity: 0.18, depthWrite: false, side: THREE.DoubleSide })));
+      g.add(new THREE.Mesh(new THREE.SphereGeometry(r * S, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), basic(col, { wireframe: true, transparent: true, opacity: 0.45 })));
+    } else if (k === 'smoke') {
+      for (let i = 0; i < 7; i++) {
+        const puff = new THREE.Mesh(new THREE.IcosahedronGeometry(r * S * (0.55 + Math.random() * 0.25), 1), lam(col, { transparent: true, opacity: 0.88 }));
+        const a = i / 7 * Math.PI * 2, d = i ? r * S * 0.45 : 0;
+        puff.position.set(Math.cos(a) * d, 30 * S + (Math.random() - 0.5) * 0.6, Math.sin(a) * d); g.add(puff);
+      }
+    } else {
+      const ring = new THREE.Mesh(new THREE.RingGeometry(r * S - 0.15, r * S, 40), basic(col, { transparent: true, opacity: 0.8, side: THREE.DoubleSide }));
+      ring.rotation.x = -Math.PI / 2; ring.position.y = 0.05;
+      const wall = new THREE.Mesh(new THREE.CylinderGeometry(r * S, r * S, 1.2, 40, 1, true), basic(col, { transparent: true, opacity: 0.12, depthWrite: false, side: THREE.DoubleSide }));
+      wall.position.y = 0.6; g.add(ring, wall);
+    }
+    scene.add(g); return g;
+  }
+  function updateZones(zones) {
+    const live = new Set();
+    Core.setZones((zones || []).map(([k, x, y, r]) => ({ k, x, y, r })));
+    (zones || []).forEach(([k, x, y, r, t, team], i) => {
+      const key = k + ':' + Math.round(x) + ':' + Math.round(y); live.add(key);
+      if (!zoneMeshes.has(key)) zoneMeshes.set(key, zoneMesh(k, r, team));
+      zoneMeshes.get(key).position.set(x * S, 0, y * S);
+    });
+    for (const [key, m] of zoneMeshes) if (!live.has(key)) { scene.remove(m); zoneMeshes.delete(key); }
   }
 
   // ---------- Aiming down the sight + leaning ----------
@@ -1510,7 +1604,7 @@
       } else if (act.rope) act.rope.visible = false;
       // names: teammates always, enemies only when you can actually see them
       proj.set(x, 2.05 + act.sz * S, z).project(camera);
-      const seen = act.info.team === match.myTeam || !me.alive || Core.lineOfSight(me.x, me.y, act.sx, act.sy, (me.z || 0) + 33, act.sz + 33);
+      const seen = act.info.team === match.myTeam || !me.alive || ((p[17] || 0) & 4) || Core.lineOfSight(me.x, me.y, act.sx, act.sy, (me.z || 0) + 33, act.sz + 33);
       const vis = p[4] && proj.z < 1 && seen;
       act.label.style.display = vis ? '' : 'none';
       if (vis) {
@@ -1524,7 +1618,7 @@
     const tip = $('move-tip');
     if (me.alive && (ui === 'game' || ui === 'practice')) {
       const lad = Core.ladderAt(me.x, me.y);
-      tip.textContent = me.rap ? 'RAPPELLING · X LET GO' : Core.rappelSpot(me) ? 'X  RAPPEL DOWN' : lad ? (me.onLadder ? 'W / S  CLIMB · SPACE  LET GO' : 'W  CLIMB LADDER') : '';
+      tip.textContent = me.rap ? 'RAPPELLING · X LET GO' : Core.rappelSpot(me) ? 'X  RAPPEL DOWN' : lad ? (me.onLadder ? 'W / S  CLIMB · TAB  LET GO' : 'W  CLIMB LADDER') : '';
       tip.hidden = !tip.textContent;
     } else tip.hidden = true;
 
@@ -1572,6 +1666,10 @@
       mctx.fillStyle = '#5dffb4'; mctx.beginPath(); mctx.arc(curState.ex.gem[1] * k, curState.ex.gem[2] * k, 4, 0, Math.PI * 2); mctx.fill();
       if (curState.ex.attack === match.myTeam) { const [rx, ry] = MAP.reboot[match.myTeam]; mctx.strokeStyle = '#5dffb4'; mctx.beginPath(); mctx.arc(rx * k, ry * k, 4, 0, Math.PI * 2); mctx.stroke(); }
       for (const c of curState.ex.cards || []) if (!c[4]) { mctx.fillStyle = '#5dffb4'; mctx.fillRect(c[1] * k - 2, c[2] * k - 2, 4, 4); }
+    }
+    if (match && curState) for (const p of curState.players) {   // revealed enemies show up in red
+      if (!((p[17] || 0) & 4) || !p[4] || !actors.get(p[0]) || actors.get(p[0]).info.team === match.myTeam) continue;
+      mctx.fillStyle = '#ff2244'; mctx.beginPath(); mctx.arc(p[1] * k, p[2] * k, 4, 0, Math.PI * 2); mctx.fill();
     }
     if (match) for (const [id, a] of actors) {
       if (id === match.you || a.info.team !== match.myTeam || !a.alive) continue;

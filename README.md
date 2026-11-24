@@ -78,6 +78,8 @@ Everything also works with a mouse or a gamepad (D-pad + A/B).
 | Shift or C | While running: slide (fast, low, slows into a crouch). Otherwise: crouch (hold) |
 | 1 / 2 | Alternator / shotgun (0.4 s to switch) |
 | T | Alternator sight: 1.3x HOG or 2.5x HCOG |
+| Space / Caps Lock | Operator tactical / ultimate |
+| Tab | Let go of a ladder |
 | Q / E (while crouched) | Aim down the sight (1.3x zoom, round holo sight): 25% less recoil, finer turning. Only while crouched: stand up and you zoom back out |
 | Q / E while aiming | Lean left / right (tap again to straighten up): your eye and gun shift 11 px to the side, stopping short of walls |
 | Space | Lower the sight (standing up also lowers it) |
@@ -199,3 +201,15 @@ Knocked-out players watch the rest of the round from an overhead camera.
 - `server.js` – online build: static files + WebSocket transport around the core
 - `build.js` – builds the offline versions (`pages` for GitHub Pages, `test` for the claude.ai artifact)
 - `.github/workflows/pages.yml` – builds and deploys the GitHub Pages site on push to `main`
+
+## Operators
+
+Pick one in the LOCKER. Space = tactical (cooldown), Caps Lock = ultimate (charges over time, faster when you deal damage).
+
+| Operator | Class | Tactical | Ultimate |
+|---|---|---|---|
+| RIOT | Assault | OVERDRIVE: fire 60% faster for 6 s | BARRAGE: three blasts along your aim |
+| VOLT | Skirmisher | BLINK: dash 5 m | RUSH: 35% faster for 8 s |
+| ECHO | Recon | PULSE: reveal enemies within 19 m for 4 s | SWEEP: reveal every enemy for 6 s |
+| HAVEN | Support | PATCH: heal you and nearby teammates 2 health | DOME: 10 s dome that stops bullets crossing it |
+| WARDEN | Controller | SMOKE: cloud that blocks sight for 8 s | LOCKDOWN: zone that slows and reveals enemies |
