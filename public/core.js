@@ -211,8 +211,8 @@ const ROUNDS_TO_WIN = 3;
 // `charge` seconds (dealing damage charges it faster).
 const OPS = {
   riot:   { name: 'RIOT', cls: 'ASSAULT', color: '#ff6a2a',
-    tac: { name: 'OVERDRIVE', cd: 24, desc: 'Fire 60% faster for 6 s' },
-    ult: { name: 'BARRAGE', charge: 100, desc: 'Three blasts land along your aim after 1 s' } },
+    tac: { name: 'CLUSTER', cd: 20, desc: 'Throw a frag and thermite in one: it blows up, then leaves a wall of fire' },
+    ult: { name: 'RAMPAGE', charge: 100, desc: '7 s: fire twice as fast, take 60% less damage, and never stop shooting' } },
   volt:   { name: 'VOLT', cls: 'SKIRMISHER', color: '#ffd23f',
     tac: { name: 'BLINK', cd: 10, desc: 'Dash 5 m the way you are moving, straight through walls' },
     ult: { name: 'WARP', charge: 90, desc: 'Teleport to your warp point (hold Caps Lock 4 s to set it, any time)' } },
@@ -223,8 +223,8 @@ const OPS = {
     tac: { name: 'PATCH', cd: 22, desc: 'Heal you and nearby teammates 2 health' },
     ult: { name: 'REBOOT', charge: 120, desc: 'Bring every knocked-out teammate back, right next to you' } },
   warden: { name: 'WARDEN', cls: 'CONTROLLER', color: '#c58bff',
-    tac: { name: 'SMOKE', cd: 18, desc: 'A smoke cloud ahead of you for 8 s (blocks sight)' },
-    ult: { name: 'LOCKDOWN', charge: 110, desc: 'A 6 m zone for 9 s: enemies inside are slowed and revealed' } },
+    tac: { name: 'BARRIER', cd: 12, charges: 3, desc: 'Place a wall (3 charges). Your team shoots through it; enemies need 9 hits to break it' },
+    ult: { name: 'SPIKE TRAP', charge: 110, desc: 'Drop a trap on the floor (or the ceiling above you): an enemy who walks over or under it loses 80% of their health' } },
 };
 const OP_LIST = Object.keys(OPS);
 const cleanOp = o => (OPS[o] ? o : OP_LIST[(Math.random() * OP_LIST.length) | 0]);
@@ -232,6 +232,25 @@ const cleanOp = o => (OPS[o] ? o : OP_LIST[(Math.random() * OP_LIST.length) | 0]
 // blocks sight through it. Set per match like curBroken.
 let curZones = null;
 function setZones(z) { curZones = z; }
+// WARDEN barriers in the match being simulated (or shown): segments that block movement for everyone and block
+// shots and sight from the other team. curLos says whose shots/sight are being checked: a team (its own barriers
+// let it through), 'ignore' (barriers don't count) or null (every barrier blocks).
+const BARRIER_H = 60;
+let curWalls = null, curLos = null;
+function setWalls(w) { curWalls = w; }
+function setLosTeam(t) { curLos = t; }
+function segDist(px, py, w) {
+  const dx = w.x2 - w.x1, dy = w.y2 - w.y1, L = dx * dx + dy * dy || 1;
+  const t = Math.max(0, Math.min(1, ((px - w.x1) * dx + (py - w.y1) * dy) / L));
+  return Math.hypot(w.x1 + dx * t - px, w.y1 + dy * t - py);
+}
+// where segment a->b crosses barrier w (0..1 along a->b), or -1
+function segCross(ax, ay, bx, by, w) {
+  const rx = bx - ax, ry = by - ay, sx = w.x2 - w.x1, sy = w.y2 - w.y1, den = rx * sy - ry * sx;
+  if (!den) return -1;
+  const t = ((w.x1 - ax) * sy - (w.y1 - ay) * sx) / den, u = ((w.x1 - ax) * ry - (w.y1 - ay) * rx) / den;
+  return t >= 0 && t <= 1 && u >= 0 && u <= 1 ? t : -1;
+}
 // Grenade tuning (px, ticks at 60 Hz). cd = cooldown after a throw.
 const GREN = {
   gravity: 0.35,
@@ -255,6 +274,7 @@ function setBroken(set) { curBroken = set; }
 // you're up on a balcony. blocked() is the ground-level version.
 function blockedAt(x, y, r, z) {
   for (let i = 0; i < MAP.walls.length; i++) if (wallOn(i) && z < wallTop(i) && z + 30 > wallBot(i) && rectHitsCircle(MAP.walls[i], x, y, r)) return true;
+  if (curWalls) for (const w of curWalls) if (z < w.z + BARRIER_H && z + 30 > w.z && segDist(x, y, w) < r + 4) return true;
   if (z >= UP.floor - 4) for (const rl of UP.rails) if (rectHitsCircle(rl, x, y, r)) return true;
   return false;
 }
@@ -262,6 +282,7 @@ const blocked = (x, y, r) => blockedAt(x, y, r, 0);
 // for grenades: vents (type 2) only block what's above vent height
 const gBlocked = (x, y, r, z) => {
   for (let i = 0; i < MAP.walls.length; i++) { const w = MAP.walls[i]; if (wallOn(i) && z < wallTop(i) && z >= wallBot(i) && !(w[4] === 2 && z < P.ventH) && rectHitsCircle(w, x, y, r)) return true; }
+  if (curWalls) for (const w of curWalls) if (z < w.z + BARRIER_H && z >= w.z && segDist(x, y, w) < r + 4) return true;
   if (z >= UP.floor && z < UP.floor + UP.rail) for (const rl of UP.rails) if (rectHitsCircle(rl, x, y, r)) return true;
   return false;
 };
@@ -295,6 +316,11 @@ function clear3(x1, y1, z1, x2, y2, z2) {
       const t = sp[0] + (sp[1] - sp[0]) * k / 6, px = x1 + dx * t, py = y1 + dy * t, pz = z1 + dz * t;
       if (pz < rampAt(px, py) - 1) return false;
     }
+  }
+  if (curWalls && curLos !== 'ignore') for (const w of curWalls) {
+    if (curLos && w.team === curLos) continue;   // your own team's barriers let your shots and sight through
+    const t = segCross(x1, y1, x2, y2, w);
+    if (t >= 0) { const pz = z1 + dz * t; if (pz >= w.z && pz < w.z + BARRIER_H) return false; }
   }
   if (curZones) for (const zn of curZones) {
     if (zn.k !== 'dome' && zn.k !== 'smoke') continue;
@@ -432,7 +458,7 @@ function cleanLook(look) {
 const publicPlayers = m => m.players.map(o => ({ id: o.id, name: o.name, team: o.team, look: o.look, op: o.op }));
 
 function makePlayer(team, name, client, look, op) {
-  return { id: nextId++, team, name, client, bot: !client, look: cleanLook(look), op: cleanOp(op), tac: 0, ult: 0, fx: {}, spdMul: 1, x: 0, y: 0, hp: P.hp, alive: true,
+  return { id: nextId++, team, name, client, bot: !client, look: cleanLook(look), op: cleanOp(op), tacCh: 3, tac: 0, ult: 0, fx: {}, spdMul: 1, x: 0, y: 0, hp: P.hp, alive: true,
     input: { f: 0, s: 0, yaw: team === 'A' ? 0 : Math.PI, pitch: 0, run: false, crouch: false }, yaw: 0, pitch: 0, cool: 0, kills: 0, burst: 0, sinceShot: 99,
     stance: 'stand', running: false, slideT: 0, slideCd: 0, slideX: 0, slideY: 0, cd: { boom: 0, frag: 0, therm: 0 }, throws: [], respawnT: 0,
     weapon: 'rifle', switchT: 0, z: 0, vz: 0,
@@ -474,8 +500,8 @@ function startMatch(mode, clients) {
 function resetRound(m) {
   m.round++; m.projectiles = []; m.fires = []; m.phase = 'countdown'; m.phaseT = 180; // 3 s: "3, 2, 1, FIGHT"
   m.broken = new Set(); m.panelHp = new Map(); m.roundReason = null;   // panels are rebuilt every round
-  m.zones = []; m.strikes = [];
-  for (const p of m.players) { p.fx = {}; p.tac = 0; p.dashT = 0; }
+  m.zones = []; m.strikes = []; m.walls2 = []; m.traps = [];
+  for (const p of m.players) { p.fx = {}; p.tac = 0; p.dashT = 0; p.tacCh = OPS[p.op] && OPS[p.op].tac.charges || 0; }
   if (m.mode === 'extraction') {
     // like Siege: teams swap attack and defence every round
     m.attack = m.round % 2 === 1 ? 'A' : 'B';
@@ -719,7 +745,9 @@ function eyePos(x, y, yaw, lean) {
 function aimTarget(m, p) {
   const [ex, ey] = eyePos(p.x, p.y, p.yaw, p.lean || 0);
   const w = WEAPONS[p.weapon || 'rifle'];
+  curLos = p.team;
   const hit = castRay(ex, ey, (p.z || 0) + STANCES[p.stance].eye, p.yaw, p.pitch, m.players.filter(o => o.alive && o.team !== p.team), w.spread);
+  curLos = null;
   return hit && hit.along <= w.range ? hit : null;   // the shotgun doesn't fire at targets out of its range
 }
 
@@ -796,7 +824,7 @@ function botThink(m, b) {
   br.lastHp = b.hp;
   if (br.hurtT > 0) br.hurtT--;
   const eye = (b.z || 0) + STANCES[b.stance].eye;
-  const canSee = o => lineOfSight(b.x, b.y, o.x, o.y, eye, (o.z || 0) + STANCES[o.stance].height * 0.6);
+  const canSee = o => { curLos = 'ignore'; const v = lineOfSight(b.x, b.y, o.x, o.y, eye, (o.z || 0) + STANCES[o.stance].height * 0.6); curLos = null; return v; };
   const near = o => Math.hypot(o.x - b.x, o.y - b.y);
   const walkTo = (x, y, run) => { const yy = followPath(b, inp, x, y); if (yy != null) inp.yaw = yy; inp.run = run; return yy != null; };
   if (!foes.length) {
@@ -849,7 +877,8 @@ function botThink(m, b) {
     if (carrying) { inp.mx = 0; inp.my = 0; inp.crouch = false; followPath(b, inp, goal.x, goal.y); aimAt(); }
     if (goal && goal.mode === 'hold') { inp.mx = 0; inp.my = 0; }
     if (br.seen > br.react && OPS[b.op]) {
-      const want = b.op === 'haven' ? b.hp <= 60 : true;
+      const want = b.op === 'haven' ? b.hp <= 60 : b.op === 'riot' ? dist > 110 && dist < 380 : true;
+      if (b.op === 'riot') br.throwDist = dist;
       if (b.tac <= 0 && want && Math.random() < 0.012) br.useTac = true;
       const wantUlt = b.op === 'volt' ? b.hp <= 40 : b.op === 'haven' ? m.players.some(o => !o.alive && o.team === b.team) : true;
       if (b.ult >= OPS[b.op].ult.charge * 60 && wantUlt && Math.random() < 0.008) br.useUlt = true;
@@ -927,7 +956,30 @@ function botThink(m, b) {
 const KINDS = ['boom', 'frag', 'therm'];
 const KIND_CODE = { boom: 0, frag: 1, therm: 2 };
 // src codes for damage/knockout events: 0 gun, 1 boomerang, 2 frag, 3 fire
-const DMG_SRC = { gun: 0, boom: 1, frag: 2, therm: 3, shotgun: 4 };
+const DMG_SRC = { gun: 0, boom: 1, frag: 2, therm: 3, shotgun: 4, trap: 5 };
+// a barrier takes n hits; at 0 it breaks
+function hitBarrier(m, w, n, x, y, z) {
+  w.hp -= n;
+  m.events.push(['wh', w.id, Math.round(x), Math.round(y), Math.round(z)]);
+  if (w.hp <= 0) { m.walls2.splice(m.walls2.indexOf(w), 1); m.events.push(['wb', w.id]); }
+}
+// an enemy barrier under the crosshair within reach: { w, t, h } or null
+function barrierUnder(m, p, maxD = 400) {
+  if (!m.walls2 || !m.walls2.length) return null;
+  const [ex, ey] = eyePos(p.x, p.y, p.yaw, p.lean || 0), eye = (p.z || 0) + STANCES[p.stance].eye;
+  const dx = Math.cos(p.yaw), dy = Math.sin(p.yaw), lim = maxD;
+  let best = null;
+  for (const w of m.walls2) {
+    if (w.team === p.team) continue;
+    const t = segCross(ex, ey, ex + dx * lim, ey + dy * lim, w); if (t < 0) continue;
+    const d = t * lim, h = eye + d * Math.tan(p.pitch);
+    if (!(h >= w.z && h < w.z + BARRIER_H) || (best && d >= best.t)) continue;
+    const saved = curLos; curLos = 'ignore';   // nothing solid between you and the barrier (at the right height)
+    const clear = clear3(ex, ey, eye, ex + dx * (d - 2), ey + dy * (d - 2), h); curLos = saved;
+    if (clear) best = { w, t: d, h };
+  }
+  return best;
+}
 
 // pitch that lands a frag/thermite about `dist` px away on open floor (bots use this to aim lobs)
 function lobPitch(kind, dist, eye) {
@@ -940,11 +992,11 @@ function lobPitch(kind, dist, eye) {
   return best;
 }
 
-function throwGrenade(m, p, kind) {
+function throwGrenade(m, p, kind, cluster = false) {
   const g = GREN[kind];
-  if (!g || p.cd[kind] > 0) return;
+  if (!g || (!cluster && p.cd[kind] > 0)) return;
   if (p.bot && kind !== 'boom' && p.brain.throwDist) p.pitch = lobPitch(kind, p.brain.throwDist, STANCES[p.stance].eye);
-  p.cd[kind] = g.cd;
+  if (!cluster) p.cd[kind] = g.cd;
   const fx = Math.cos(p.yaw), fy = Math.sin(p.yaw);
   let x = p.x + fx * (P.r + 4), y = p.y + fy * (P.r + 4);
   if (blockedAt(x, y, 3, (p.z || 0) + 20)) { x = p.x; y = p.y; }
@@ -956,6 +1008,7 @@ function throwGrenade(m, p, kind) {
     const pit = clamp(p.pitch + g.lift, -0.6, 1.1), c = Math.cos(pit);
     Object.assign(pr, { vx: fx * c * g.speed, vy: fy * c * g.speed, vz: Math.sin(pit) * g.speed });
   }
+  if (cluster) pr.cluster = true;
   m.projectiles.push(pr);
   m.events.push(['g', p.id, KIND_CODE[kind]]);
 }
@@ -972,6 +1025,7 @@ function touchingEnemy(m, pr, pad) {
 // one place that applies damage and reports hits / knockouts (owner may be null)
 function damage(m, o, amount, owner, src, head, x, y, z) {
   if (!o.alive) return;
+  if (o.fx && o.fx.rampage > 0) amount = Math.round(amount * 0.4);   // RIOT's RAMPAGE: 60% less damage
   o.hp -= amount;
   if (owner && owner !== o && OPS[owner.op]) owner.ult = Math.min(OPS[owner.op].ult.charge * 60, owner.ult + amount * 6);   // 1 health of damage = 2 s of charge
   m.events.push(['h', o.id, Math.round(x), Math.round(y), Math.round(z), owner ? owner.id : 0, head ? 1 : 0, src]);
@@ -1002,6 +1056,7 @@ function explode(m, pr, radius, dmg, src) {
     const nx = clamp(pr.x, w[0], w[0] + w[2]), ny = clamp(pr.y, w[1], w[1] + w[3]), d = Math.hypot(pr.x - nx, pr.y - ny);
     if (d < radius) damagePanel(m, i, Math.round(dmg * P.panelBlast * (1 - d / radius)));
   });
+  if (m.walls2) for (const w of m.walls2) if (w.team !== pr.team && segDist(pr.x, pr.y, w) < radius) hitBarrier(m, w, 2, pr.x, pr.y, pr.z);
   const owner = m.players.find(o => o.id === pr.owner);
   for (const o of m.players) {
     if (!o.alive || o.team === pr.team) continue;
@@ -1049,7 +1104,7 @@ function stepThrown(m, pr) {
   }
   const enemy = touchingEnemy(m, pr, 4);
   if (pr.kind === 'frag') {
-    if (enemy || pr.t >= g.fuse) { explode(m, pr, g.radius, g.dmg, DMG_SRC.frag); pr.dead = true; }
+    if (enemy || pr.t >= g.fuse) { explode(m, pr, g.radius, g.dmg, DMG_SRC.frag); if (pr.cluster) ignite(m, pr); pr.dead = true; }
     else if ((hitWall || landed) && Math.hypot(pr.vx, pr.vy, pr.vz) > 1.2) m.events.push(['b', pr.id]);
   } else if (enemy || hitWall || landed || pr.z <= ground) { ignite(m, pr); pr.dead = true; }
   if (pr.t > 600) pr.dead = true;
@@ -1272,17 +1327,20 @@ function startDash(p, mx, my) {
 }
 function useTac(m, p, mx, my) {
   const op = OPS[p.op];
-  if (!op || p.tac > 0 || !p.alive) return;
-  p.tac = op.tac.cd * 60;
+  if (!op || !p.alive) return;
+  if (op.tac.charges) { if (!(p.tacCh > 0)) return; p.tacCh--; if (p.tac <= 0) p.tac = op.tac.cd * 60; }
+  else { if (p.tac > 0) return; p.tac = op.tac.cd * 60; }
   const enemies = m.players.filter(o => o.alive && o.team !== p.team);
-  if (p.op === 'riot') p.fx.over = 360;
+  if (p.op === 'riot') throwGrenade(m, p, 'frag', true);
   else if (p.op === 'volt') { if (!startDash(p, mx, my)) { p.tac = 0; return; } }
   else if (p.op === 'echo') for (const o of enemies) { if (Math.hypot(o.x - p.x, o.y - p.y) < 480) o.fx.reveal = Math.max(o.fx.reveal || 0, 420); }
   else if (p.op === 'haven') {
     for (const o of m.players) if (o.alive && o.team === p.team && Math.hypot(o.x - p.x, o.y - p.y) < 120) { o.hp = Math.min(P.hp, o.hp + 40); m.events.push(['hl', o.id]); }
-  } else if (p.op === 'warden') {
-    const hit = rayWall(p.x, p.y, Math.cos(p.yaw), Math.sin(p.yaw), 140), d = hit ? Math.max(0, hit.t - 24) : 130;
-    m.zones.push({ k: 'smoke', x: p.x + Math.cos(p.yaw) * d, y: p.y + Math.sin(p.yaw) * d, r: 64, t: 480, team: p.team, owner: p.id });
+  } else if (p.op === 'warden') {   // barrier: a wall across your view, a step ahead (your oldest goes if you already have 3)
+    const fx = Math.cos(p.yaw), fy = Math.sin(p.yaw), d = 40, cx = p.x + fx * d, cy = p.y + fy * d, h = 34;
+    const mine = m.walls2.filter(w => w.owner === p.id);
+    if (mine.length >= 3) m.walls2.splice(m.walls2.indexOf(mine[0]), 1);
+    m.walls2.push({ id: m.nextProj++, x1: cx + fy * h, y1: cy - fx * h, x2: cx - fy * h, y2: cy + fx * h, z: p.z || 0, hp: 9, team: p.team, owner: p.id });
   }
   m.events.push(['ab', p.id, 0, p.op]);
 }
@@ -1293,10 +1351,7 @@ function useUlt(m, p) {
   if (p.op === 'haven' && !down.length) return;   // nobody to bring back: keep the charge
   if (p.op === 'volt' && !p.mark) return;         // no warp point set yet
   p.ult = 0;
-  if (p.op === 'riot') {   // three blasts along the aim, stopping short of the first wall
-    const hit = rayWall(p.x, p.y, Math.cos(p.yaw), Math.sin(p.yaw), 400), max = hit ? hit.t - 20 : 400;
-    [140, 220, 300].forEach((d, k) => { const dd = Math.min(d, max - (2 - k) * 40); if (dd > 30) m.strikes.push({ x: p.x + Math.cos(p.yaw) * dd, y: p.y + Math.sin(p.yaw) * dd, t: 60 + k * 12, owner: p.id, team: p.team }); });
-  } else if (p.op === 'volt') {   // warp to the point you set
+  if (p.op === 'riot') p.fx.rampage = 420; else if (p.op === 'volt') {   // warp to the point you set
     m.events.push(['tp', p.id, Math.round(p.x), Math.round(p.y)]);
     Object.assign(p, { x: p.mark[0], y: p.mark[1], z: p.mark[2], vz: 0, rap: null, onLadder: false, dashT: 0, dashTo: null });
   }
@@ -1308,7 +1363,12 @@ function useUlt(m, p) {
       m.events.push(['rb', p.id, o.id]);
     }
   }
-  else if (p.op === 'warden') m.zones.push({ k: 'lock', x: p.x, y: p.y, r: 140, t: 540, team: p.team, owner: p.id });
+  else if (p.op === 'warden') {   // spike trap: on the ceiling if you're standing under the upper floor, else on the floor
+    const ceil = (p.z || 0) < 10 && onSlab(p.x, p.y);
+    const mine = m.traps.filter(t => t.owner === p.id);
+    if (mine.length >= 2) m.traps.splice(m.traps.indexOf(mine[0]), 1);
+    m.traps.push({ id: m.nextProj++, x: p.x, y: p.y, z: ceil ? UP.floor : p.z || 0, ceil, team: p.team, owner: p.id });
+  }
   m.events.push(['ab', p.id, 1, p.op]);
 }
 // every tick: cooldowns, charge, effects, zones, barrage blasts
@@ -1316,15 +1376,24 @@ function stepAbilities(m) {
   const fight = m.phase === 'fight';
   for (const p of m.players) {
     const op = OPS[p.op]; if (!op) continue;
-    if (fight && p.tac > 0) p.tac--;
+    if (fight && p.tac > 0 && --p.tac <= 0 && op.tac.charges) { p.tacCh = Math.min(op.tac.charges, (p.tacCh || 0) + 1); if (p.tacCh < op.tac.charges) p.tac = op.tac.cd * 60; }
     if (fight && p.alive && p.ult < op.ult.charge * 60) p.ult++;
     for (const k in p.fx) if (p.fx[k] > 0) p.fx[k]--;
   }
   m.zones = m.zones.filter(z => --z.t > 0);
+  if (fight) for (const t of m.traps) {   // an enemy passing over or under a spike trap sets it off
+    const o = m.players.find(o => o.alive && o.team !== t.team && Math.hypot(o.x - t.x, o.y - t.y) < 22 && Math.abs((o.z || 0) - t.z) <= 90);
+    if (!o) continue;
+    t.done = true;
+    m.events.push(['tr', Math.round(t.x), Math.round(t.y), Math.round(t.z), o.id]);
+    damage(m, o, Math.max(1, Math.ceil(o.hp * 0.8)), m.players.find(q => q.id === t.owner) || null, DMG_SRC.trap, false, o.x, o.y, 20);
+  }
+  m.traps = m.traps.filter(t => !t.done);
   for (const z of m.zones) if (z.k === 'lock') for (const o of m.players) {
     if (o.alive && o.team !== z.team && Math.hypot(o.x - z.x, o.y - z.y) < z.r) { o.fx.slow = 6; o.fx.reveal = Math.max(o.fx.reveal || 0, 6); }
   }
   for (const p of m.players) p.spdMul = (p.fx.rush > 0 ? 1.35 : 1) * (p.fx.slow > 0 ? 0.6 : 1);
+  curWalls = m.walls2;
   for (const s of m.strikes) if (--s.t <= 0) {
     explode(m, { x: s.x, y: s.y, z: supportAt(s.x, s.y, 200) + 4, owner: s.owner, team: s.team }, 62, 75, DMG_SRC.frag);
     s.done = true;
@@ -1340,8 +1409,8 @@ function switchWeapon(p, w) {
 function stepMatch(m) {
   m.tick++;
   curBroken = m.broken || null;   // collision for this match
-  if (!m.zones) m.zones = []; if (!m.strikes) m.strikes = [];
-  curZones = m.zones;
+  if (!m.zones) m.zones = []; if (!m.strikes) m.strikes = []; if (!m.walls2) m.walls2 = []; if (!m.traps) m.traps = [];
+  curZones = m.zones; curWalls = m.walls2;
   stepAbilities(m);
   if (m.phase === 'countdown') { if (--m.phaseT <= 0) m.phase = 'fight'; }
   else if (m.phase === 'roundEnd') {
@@ -1398,11 +1467,13 @@ function stepMatch(m) {
       const [ex2, ey2] = eyePos(p.x, p.y, p.yaw, p.lean || 0);
       pan = panelUnder(ex2, ey2, STANCES[p.stance].eye, p.yaw, p.pitch);
     }
-    p.onT = tgt || pan ? (p.onT || 0) + 1 : 0;                // how long the crosshair has been on someone
+    const bar = !tgt && !pan && m.phase === 'fight' && !p.running && (!p.bot || p.brain.seen > p.brain.react) && !(p.bot && p.brain.dummy) ? barrierUnder(m, p) : null;
+    const rampage = p.fx.rampage > 0 && m.phase === 'fight' && !p.running && !p.bot ? true : p.fx.rampage > 0 && p.bot && p.brain.seen > 0;
+    p.onT = tgt || pan || bar || rampage ? (p.onT || 0) + 1 : 0;                // how long the crosshair has been on someone
     if (p.switchT > 0) p.switchT--;
     if (pan && p.cool <= 0 && p.switchT <= 0 && p.onT > P.fireDelay) {
       const wn = p.weapon || 'rifle', W = WEAPONS[wn];
-      p.cool = W.cooldown * (p.fx.over > 0 ? 0.62 : 1); p.sinceShot = 0;
+      p.cool = W.cooldown * (p.fx.over > 0 ? 0.62 : 1) * (p.fx.rampage > 0 ? 0.5 : 1); p.sinceShot = 0;
       const [ox, oy] = eyePos(p.x, p.y, p.yaw, p.lean || 0);
       const ex = Math.round(ox + Math.cos(p.yaw) * pan.t), ey = Math.round(oy + Math.sin(p.yaw) * pan.t);
       m.events.push(['s', p.id, p.burst, ex, ey, Math.round(pan.h), W.code]);
@@ -1410,10 +1481,23 @@ function stepMatch(m) {
       damagePanel(m, pan.i, weaponDamage(wn, pan.t, false));
       p.burst++;
     }
-    const hit = tgt && p.cool <= 0 && p.switchT <= 0 && (p.bot || p.onT > P.fireDelay) ? tgt : null;
+    const rate = (p.fx.over > 0 ? 0.62 : 1) * (p.fx.rampage > 0 ? 0.5 : 1);   // RAMPAGE fires twice as fast
+    if (!tgt && !pan && (bar || rampage) && p.cool <= 0 && p.switchT <= 0 && (p.bot || p.onT > P.fireDelay || rampage)) {
+      // shooting a barrier, or RAMPAGE spraying with nobody under the crosshair
+      const wn = p.weapon || 'rifle', W = WEAPONS[wn];
+      p.cool = W.cooldown * rate; p.sinceShot = 0;
+      const [ox, oy] = eyePos(p.x, p.y, p.yaw, p.lean || 0), eye = (p.z || 0) + STANCES[p.stance].eye;
+      let d = bar ? bar.t : (rayWall(ox, oy, Math.cos(p.yaw), Math.sin(p.yaw), 900) || { t: 900 }).t;
+      const ex = Math.round(ox + Math.cos(p.yaw) * d), ey = Math.round(oy + Math.sin(p.yaw) * d), ez = Math.round(bar ? bar.h : clamp(eye + d * Math.tan(p.pitch), 0, 200));
+      m.events.push(['s', p.id, p.burst, ex, ey, ez, W.code]);
+      if (bar && (!W.range || d <= W.range)) hitBarrier(m, bar.w, 1, ex, ey, ez);
+      if (p.bot) { const k = weaponKick(wn, p.burst); p.pitch = Math.min(P.pitchMax, p.pitch + k.pitch); p.yaw = wrapAngle(p.yaw + k.yaw); }
+      p.burst++;
+    }
+    const hit = tgt && p.cool <= 0 && p.switchT <= 0 && (p.bot || p.onT > P.fireDelay || p.fx.rampage > 0) ? tgt : null;
     if (hit) {
       const wn = p.weapon || 'rifle', W = WEAPONS[wn];
-      p.cool = W.cooldown * (p.fx.over > 0 ? 0.62 : 1); p.sinceShot = 0;
+      p.cool = W.cooldown * (p.fx.over > 0 ? 0.62 : 1) * (p.fx.rampage > 0 ? 0.5 : 1); p.sinceShot = 0;
       const o = hit.c, d = hit.along;
       const [ox, oy] = eyePos(p.x, p.y, p.yaw, p.lean || 0);
       const ex = Math.round(ox + Math.cos(p.yaw) * d), ey = Math.round(oy + Math.sin(p.yaw) * d);
@@ -1446,7 +1530,9 @@ function stepMatch(m) {
       players: m.players.map(p => [p.id, r1(p.x), r1(p.y), p.hp, p.alive ? 1 : 0, r3(p.yaw), r3(p.pitch), p.kills,
         STANCE_CODE[p.stance] + (p.running ? 4 : 0) + (p.ads ? 8 : 0) + (p.lean < 0 ? 16 : p.lean > 0 ? 32 : 0) + (p.rap ? 64 : 0) + (p.onLadder ? 128 : 0), Math.ceil(p.cd.boom / 6), Math.ceil(p.cd.frag / 6), Math.ceil(p.cd.therm / 6), WEAPONS[p.weapon || 'rifle'].code + (p.switchT > 0 ? 2 : 0), r1(p.z || 0), p.alive ? 0 : Math.ceil((p.respawnT || 0) / 60), Math.ceil((p.tac || 0) / 60),
         OPS[p.op] ? Math.floor(p.ult / (OPS[p.op].ult.charge * 60) * 100) : 0,
-        (p.fx.over > 0 ? 1 : 0) + (p.fx.rush > 0 ? 2 : 0) + (p.fx.reveal > 0 ? 4 : 0) + (p.fx.slow > 0 ? 8 : 0)]),
+        (p.fx.over > 0 ? 1 : 0) + (p.fx.rush > 0 ? 2 : 0) + (p.fx.reveal > 0 ? 4 : 0) + (p.fx.slow > 0 ? 8 : 0) + (p.fx.rampage > 0 ? 16 : 0), OPS[p.op] && OPS[p.op].tac.charges ? p.tacCh : -1]),
+      walls: (m.walls2 || []).map(w => [w.id, r1(w.x1), r1(w.y1), r1(w.x2), r1(w.y2), r1(w.z), w.hp, w.team]),
+      traps: (m.traps || []).map(t => [t.id, r1(t.x), r1(t.y), r1(t.z), t.ceil ? 1 : 0, t.team]),
       zones: (m.zones || []).map(z => [z.k, r1(z.x), r1(z.y), z.r, Math.ceil(z.t / 60), z.team]),
       proj: m.projectiles.map(pr => [pr.id, KIND_CODE[pr.kind], r1(pr.x), r1(pr.y), r1(pr.z), pr.team]),
       fires: m.fires.map(f => [f.id, Math.round(f.x1), Math.round(f.y1), Math.round(f.x2), Math.round(f.y2), f.t, f.team, Math.round(f.z || 0)]),
@@ -1531,5 +1617,5 @@ function start(opts = {}) {
 
 // identifies the map, so a client only plays on a server with the same one
 const MAP_ID = MAP.w + 'x' + MAP.h + '-' + MAP.walls.length + '-' + UP.ladders.length;
-return { OPS, OP_LIST, setZones, startDash, MAP_ID, slabRects, onSlab, ladderAt, rappelSpot, connect, start, tick, matchmake, createPractice, MAP, P, LOOK_SIZES, STANCES, KINDS, recoilKick, blocked, lineOfSight, stepMovement, castRay, predictThrow, segmentClear, eyePos, setBroken, panelUnder, EXTRACT, MODES, clear3, supportAt, blockedAt, _matches: matches, WEAPONS, WEAPON_BY_CODE, weaponDamage, weaponKick, get botFillMs() { return BOT_FILL_MS; } };
+return { OPS, OP_LIST, setZones, setWalls, setLosTeam, BARRIER_H, startDash, MAP_ID, slabRects, onSlab, ladderAt, rappelSpot, connect, start, tick, matchmake, createPractice, MAP, P, LOOK_SIZES, STANCES, KINDS, recoilKick, blocked, lineOfSight, stepMovement, castRay, predictThrow, segmentClear, eyePos, setBroken, panelUnder, EXTRACT, MODES, clear3, supportAt, blockedAt, _matches: matches, WEAPONS, WEAPON_BY_CODE, weaponDamage, weaponKick, get botFillMs() { return BOT_FILL_MS; } };
 });

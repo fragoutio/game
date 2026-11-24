@@ -792,7 +792,7 @@
     actors.clear(); match = null; prevState = curState = null; matchOver = false;
     vmScene.remove(vm.group); $('feed').innerHTML = '';
     clearGrenadeFx();
-    resetPanels(); clearCards(); updateZones([]); gemMesh.visible = false; $('gem-marker').hidden = true; $('ex-hud').hidden = true; $('carry-banner').hidden = true;
+    resetPanels(); clearCards(); updateZones([]); updateBarriers([], []); gemMesh.visible = false; $('gem-marker').hidden = true; $('ex-hud').hidden = true; $('carry-banner').hidden = true;
   }
   function clearMatchIfOver() { if (matchOver) clearMatch(); }
 
@@ -837,7 +837,7 @@
     const feed = $('feed'), row = document.createElement('div');
     const k = document.createElement('span'); k.className = killer.team === 'A' ? 'a' : 'b'; k.textContent = killer.name;
     const v = document.createElement('span'); v.className = victim.team === 'A' ? 'a' : 'b'; v.textContent = victim.name;
-    row.append(k, head ? ' ◎ ' : [' ▸ ', ' ↺ ', ' ✹ ', ' ♨ ', ' ⁂ '][src] || ' ▸ ', v); feed.prepend(row);
+    row.append(k, head ? ' ◎ ' : [' ▸ ', ' ↺ ', ' ✹ ', ' ♨ ', ' ⁂ ', ' ✕ '][src] || ' ▸ ', v); feed.prepend(row);
     while (feed.childElementCount > 5) feed.lastChild.remove();
     setTimeout(() => row.remove(), 5000);
   }
@@ -892,6 +892,7 @@
     const row = msg.players.find(p => p[0] === match.you);
     updateAbilityHud(row);
     updateZones(msg.zones);
+    updateBarriers(msg.walls, msg.traps);
     // new round: snap your view and position back to your spawn
     if (row && msg.round !== lastRound) {
       lastRound = msg.round;
@@ -933,6 +934,9 @@
         if (ev[3] === 'volt' && ev[2] === 0 && a) burst(a.x, 1, a.z, 0xffd23f, 12, 3);
         continue;
       }
+      if (ev[0] === 'wh') { burst(ev[2] * S, ev[4] * S, ev[3] * S, 0x9fd8ff, 6, 2); continue; }
+      if (ev[0] === 'wb') { const b = barrierMeshes.get(ev[1]); if (b) burst(b.position.x, 1.2, b.position.z, 0x9fd8ff, 26, 4); sfx.boom(); continue; }
+      if (ev[0] === 'tr') { burst(ev[1] * S, ev[3] * S + 0.5, ev[2] * S, 0xc0c4cc, 24, 4); if (ev[4] === match.you) { announce('SPIKE TRAP', 'you lost 80% of your health', 'var(--team-b)', 1000); } sfx.hurt(); continue; }
       if (ev[0] === 'hl') { if (ev[1] === match.you) { toast('Patched up +2 health'); sfx.ready(); } continue; }
       if (ev[0] === 'cp') { const a = actors.get(ev[1]), d = actors.get(ev[2]); if (ev[1] === match.you) { announce('REBOOT CARD', `${d ? d.info.name : 'A teammate'} · take it to the back of your base`, '#5dffb4', 1800); sfx.ready(); } else if (ev[2] === match.you) toast(`${a ? a.info.name : 'A teammate'} has your reboot card`); continue; }
       if (ev[0] === 'rb') { const a = actors.get(ev[1]), d = actors.get(ev[2]); toast(`${a ? a.info.name : 'Someone'} rebooted ${d ? d.info.name : 'a teammate'}!`); sfx.ready(); if (ev[2] === match.you) announce('REBOOTED', 'back in the fight', 'var(--good)', 1200); continue; }
@@ -1286,8 +1290,9 @@
   // ---------- Operator abilities: Space tactical, Caps Lock ultimate ----------
   function useTactical() {
     const op = Core.OPS[me.op]; if (!op || !me.alive) return;
-    if (me.tacLeft > 0) { sfx.denied(); toast(`${op.tac.name} ready in ${me.tacLeft} s`); return; }
+    if (op.tac.charges ? !(me.tacCh > 0) : me.tacLeft > 0) { sfx.denied(); toast(`${op.tac.name} ready in ${me.tacLeft} s`); return; }
     me.tacN = (me.tacN || 0) + 1;
+    if (op.tac.charges) me.tacCh--;
     if (me.op === 'volt') {   // blink right away on this computer too (the server does the same)
       const c = Math.cos(me.yaw), sn = Math.sin(me.yaw), fx = me.x, fy = me.y;
       if (!Core.startDash(me, c * lastMove.f - sn * lastMove.s, sn * lastMove.f + c * lastMove.s)) { sfx.denied(); toast('Nowhere to blink to'); return; }
@@ -1338,17 +1343,17 @@
   }
   function updateAbilityHud(row) {
     const op = Core.OPS[me.op]; if (!op || !row) return;
-    me.tacLeft = row[15] || 0; me.ultPct = row[16] || 0;
+    me.tacLeft = row[15] || 0; me.ultPct = row[16] || 0; me.tacCh = row[18];
     const fx = row[17] || 0;
     me.spdMul = (fx & 2 ? 1.35 : 1) * (fx & 8 ? 0.6 : 1);
     const t = document.querySelector('#abil [data-a="tac"]'), u = document.querySelector('#abil [data-a="ult"]');
     t.querySelector('span').textContent = op.tac.name; u.querySelector('span').textContent = op.ult.name;
-    t.querySelector('b').textContent = me.tacLeft > 0 ? me.tacLeft + 's' : 'READY';
+    t.querySelector('b').textContent = op.tac.charges ? `×${me.tacCh}${me.tacLeft > 0 ? ' · ' + me.tacLeft + 's' : ''}` : me.tacLeft > 0 ? me.tacLeft + 's' : 'READY';
     u.querySelector('b').textContent = me.ultPct >= 100 ? 'READY' : me.ultPct + '%';
-    t.classList.toggle('ready', !me.tacLeft); u.classList.toggle('ready', me.ultPct >= 100);
+    t.classList.toggle('ready', op.tac.charges ? me.tacCh > 0 : !me.tacLeft); u.classList.toggle('ready', me.ultPct >= 100);
     u.style.setProperty('--fill', me.ultPct + '%');
     $('abil-op').textContent = op.name; $('abil-op').style.color = op.color;
-    $('me-fx').textContent = [fx & 1 ? 'OVERDRIVE' : '', fx & 2 ? 'RUSH' : '', fx & 8 ? 'SLOWED' : '', fx & 4 ? 'REVEALED' : ''].filter(Boolean).join(' · ');
+    $('me-fx').textContent = [fx & 16 ? 'RAMPAGE' : '', fx & 1 ? 'OVERDRIVE' : '', fx & 2 ? 'RUSH' : '', fx & 8 ? 'SLOWED' : '', fx & 4 ? 'REVEALED' : ''].filter(Boolean).join(' · ');
   }
   // ability zones in the world: dome, smoke cloud, lockdown ring
   const zoneMeshes = new Map();
@@ -1380,6 +1385,45 @@
       zoneMeshes.get(key).position.set(x * S, 0, y * S);
     });
     for (const [key, m] of zoneMeshes) if (!live.has(key)) { scene.remove(m); zoneMeshes.delete(key); }
+  }
+
+  // WARDEN barriers (team-coloured glass walls with a frame; dimmer as they take hits) and spike traps
+  const barrierMeshes = new Map(), trapMeshes = new Map();
+  function barrierMesh(w) {
+    const [, x1, y1, x2, y2, z, , team] = w, len = Math.hypot(x2 - x1, y2 - y1) * S, H = Core.BARRIER_H * S;
+    const g = new THREE.Group(), col = TEAM[team].hex;
+    const glass = new THREE.Mesh(new THREE.BoxGeometry(len, H, 0.12), basic(col, { transparent: true, opacity: 0.35, depthWrite: false }));
+    glass.position.y = H / 2; g.add(glass);
+    for (const [yy, hh] of [[0.06, 0.12], [H - 0.04, 0.08]]) { const bar = new THREE.Mesh(new THREE.BoxGeometry(len + 0.06, hh, 0.18), lam(0x3a3d44)); bar.position.y = yy; g.add(bar); }
+    for (const s of [-1, 1]) { const post = new THREE.Mesh(new THREE.BoxGeometry(0.1, H, 0.2), lam(0x3a3d44)); post.position.set(s * len / 2, H / 2, 0); g.add(post); }
+    g.position.set((x1 + x2) / 2 * S, z * S, (y1 + y2) / 2 * S);
+    g.rotation.y = -Math.atan2(y2 - y1, x2 - x1);
+    g.userData.glass = glass; scene.add(g); return g;
+  }
+  function trapMesh(t) {
+    const [, x, y, z, ceil, team] = t, g = new THREE.Group();
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.46, 0.08, 8), lam(0x3a3d44)); g.add(base);
+    for (let i = 0; i < 7; i++) {
+      const sp = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.32, 4), basic(i ? 0xc0c4cc : TEAM[team].hex));
+      const a = i / 6 * Math.PI * 2, d = i ? 0.26 : 0; sp.position.set(Math.cos(a) * d, 0.2, Math.sin(a) * d); g.add(sp);
+    }
+    if (ceil) { g.rotation.x = Math.PI; g.position.set(x * S, z * S - 0.2, y * S); } else g.position.set(x * S, z * S + 0.04, y * S);
+    scene.add(g); return g;
+  }
+  function updateBarriers(walls, traps) {
+    const ws = (walls || []).map(w => ({ id: w[0], x1: w[1], y1: w[2], x2: w[3], y2: w[4], z: w[5], hp: w[6], team: w[7] }));
+    Core.setWalls(ws);
+    if (match) Core.setLosTeam(match.myTeam);
+    const live = new Set();
+    for (const w of walls || []) {
+      live.add(w[0]);
+      if (!barrierMeshes.has(w[0])) barrierMeshes.set(w[0], barrierMesh(w));
+      barrierMeshes.get(w[0]).userData.glass.material.opacity = (match && w[7] === match.myTeam ? 0.04 + 0.08 * w[6] / 9 : 0.15 + 0.3 * w[6] / 9);   // your own barriers are nearly clear (you see and shoot through them)
+    }
+    for (const [id, m] of barrierMeshes) if (!live.has(id)) { scene.remove(m); barrierMeshes.delete(id); }
+    const tl = new Set();
+    for (const t of traps || []) { tl.add(t[0]); if (!trapMeshes.has(t[0])) trapMeshes.set(t[0], trapMesh(t)); }
+    for (const [id, m] of trapMeshes) if (!tl.has(id)) { scene.remove(m); trapMeshes.delete(id); }
   }
 
   // ---------- Aiming down the sight + leaning ----------

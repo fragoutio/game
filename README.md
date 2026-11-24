@@ -208,8 +208,8 @@ Pick one in the LOCKER. Space = tactical (cooldown), Caps Lock = ultimate (charg
 
 | Operator | Class | Tactical | Ultimate |
 |---|---|---|---|
-| RIOT | Assault | OVERDRIVE: fire 60% faster for 6 s | BARRAGE: three blasts along your aim |
+| RIOT | Assault | CLUSTER: a frag and thermite in one (blast, then a wall of fire) | RAMPAGE: 7 s of firing twice as fast, 60% less damage taken, nonstop fire |
 | VOLT | Skirmisher | BLINK: dash 5 m straight through walls | WARP: teleport to your warp point (hold Caps Lock 4 s to set it) |
 | ECHO | Recon | PULSE: highlight enemies within 20 m for 7 s (through walls) | SWEEP: highlight every enemy for 15 s |
 | HAVEN | Support | PATCH: heal you and nearby teammates 2 health | REBOOT: bring every knocked-out teammate back next to you |
-| WARDEN | Controller | SMOKE: cloud that blocks sight for 8 s | LOCKDOWN: zone that slows and reveals enemies |
+| WARDEN | Controller | BARRIER: place up to 3 walls; your team shoots through, enemies need 9 hits | SPIKE TRAP: on the floor or ceiling; an enemy walking over or under it loses 80% of their health |
