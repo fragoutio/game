@@ -121,7 +121,7 @@ Tuning lives in the `P` object near the top of `public/core.js` (`recoilPitch`, 
 | Key | Weapon | Damage (5 health = 100 hp) | Fire |
 |---|---|---|---|
 | 1 | Alternator | 1 health body, 3 head, any range | fast (every 7 ticks), climbing recoil pattern |
-| 2 | Shotgun | up close (≤ 60 px): 4 health body, 5 head (one-shot knockout); falls to about 1 health by 160 px; won't fire beyond 260 px | pump (every 54 ticks), wide spread, one big kick per shot |
+| 2 | Shotgun | up close (≤ 60 px): 4 health body, 5 head (one-shot knockout); falls to about 1 health by 160 px (still fires at any range) | pump (every 27 ticks), wide spread, one big kick per shot |
 
 Both auto-fire. Tuning is the `WEAPONS` table in `public/core.js`. Bots switch to the shotgun when you're
 close (under 100 px) and back to the rifle at range (over 170 px). The kill feed shows ⁂ for shotgun knockouts.

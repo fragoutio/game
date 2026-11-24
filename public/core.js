@@ -166,7 +166,7 @@ const P = {
   climb: 1.6, rapSpeed: 1.3,   // ladder climbing and rappelling speed (px per tick)
   // Green wood panels: hp each; guns fire at a panel under the crosshair within panelRange px; grenades
   // blasts damage them too (x panelBlast)
-  panelHp: 160, panelRange: 220, panelBlast: 1.5,
+  panelHp: 160, panelRange: 3000, panelBlast: 1.5,   // panels can be shot from any distance
 };
 // Extraction (4v4): attackers extract the gem (stand within extractR px for extractTicks), carry it back
 // to their base. Round timer roundTicks (3 min). A dropped gem is picked up by an attacker (pickR) or sent
@@ -188,7 +188,7 @@ const WEAPONS = {
   // shotgun: up close (within `close` px) 4 health to the body, 5 to the head (a one-shot knockout); damage
   // drops steeply to `minFactor` (about 1 health) by `far`, and it won't fire beyond `range`. Only worth it
   // up close. Wide spread (forgiving aim), pumps between shots, one big kick per shot.
-  shotgun: { code: 1, cooldown: 27, body: 80, head: 100, spread: 7, close: 60, far: 160, minFactor: 0.25, range: 260,
+  shotgun: { code: 1, cooldown: 27, body: 80, head: 100, spread: 7, close: 60, far: 160, minFactor: 0.25, range: Infinity,
     kick: 0.075, kickYaw: 0.02 },
 };
 const WEAPON_BY_CODE = ['rifle', 'shotgun'];
@@ -703,24 +703,44 @@ function rayWall(x, y, dx, dy, maxD) {
   }
   return best;
 }
-// A green panel under the crosshair within range (and at a height the panel covers): { i, t, h } or null
+// First wall the view ray actually meets in 3D (from eye height, going up/down with the pitch): { i, t } or null.
+// Unlike rayWall it skips walls the shot passes over or under (e.g. shooting down from upstairs).
+function rayWall3(x, y, eye, dx, dy, tp, maxD) {
+  let best = null;
+  for (let i = 0; i < MAP.walls.length; i++) {
+    if (!wallOn(i)) continue;
+    const [wx, wy, w, h] = MAP.walls[i];
+    let t0 = 0, t1 = maxD, miss = false;
+    for (const [p, q] of [[-dx, x - wx], [dx, wx + w - x], [-dy, y - wy], [dy, wy + h - y]]) {
+      if (p === 0) { if (q < 0) { miss = true; break; } }
+      else { const r = q / p; if (p < 0) { if (r > t1) { miss = true; break; } if (r > t0) t0 = r; } else { if (r < t0) { miss = true; break; } if (r < t1) t1 = r; } }
+    }
+    if (miss || t0 > t1 || (best && t0 >= best.t)) continue;
+    const za = eye + t0 * tp, zb = eye + t1 * tp;
+    if (Math.min(za, zb) < wallTop(i) && Math.max(za, zb) > wallBot(i)) best = { i, t: t0 };
+  }
+  return best;
+}
+// A green panel under the crosshair (and at a height the panel covers): { i, t, h } or null
 function panelUnder(x, y, eye, yaw, pitch, maxD = P.panelRange) {
-  const hit = rayWall(x, y, Math.cos(yaw), Math.sin(yaw), maxD);
+  const tp = Math.tan(pitch), hit = rayWall3(x, y, eye, Math.cos(yaw), Math.sin(yaw), tp, maxD);
   if (!hit || MAP.walls[hit.i][4] !== 3) return null;
-  const h = eye + hit.t * Math.tan(pitch);
-  return h > 0 && h < 76 ? { i: hit.i, t: hit.t, h } : null;
+  const h = eye + hit.t * tp;
+  return h > wallBot(hit.i) - 2 && h < wallTop(hit.i) ? { i: hit.i, t: hit.t, h } : null;
 }
 
 // What's under the crosshair: the view ray from the shooter's eye along yaw/pitch passes through a body
 // (a cylinder r wide and as tall as their stance) with nothing blocking the view. The top headH px is the head.
 // cands: [{ x, y, stance }]. Returns { c, along, h, head } for the nearest, or null.
-function castRay(x, y, eye, yaw, pitch, cands, spread = P.lockR) {
+function castRay(x, y, eye, yaw, pitch, cands, spread0 = P.lockR) {
   const dx = Math.cos(yaw), dy = Math.sin(yaw), tp = Math.tan(pitch);
+  let spread = spread0;
   let best = null;
   for (const c of cands) {
     const rx = c.x - x, ry = c.y - y, along = rx * dx + ry * dy;
     if (along <= 0 || (best && along >= best.along)) continue;
     const perp = Math.abs(rx * dy - ry * dx);
+    spread = spread0 + along * 0.005;   // a little extra forgiveness the further away they are (about 5 px at 1000 px)
     if (perp > P.r + spread) continue;
     const height = STANCES[c.stance || 'stand'].height, cz = c.z || 0, h = eye + along * tp - cz;   // h: height up their body
     if (h < -spread || h > height + Math.max(0, spread - P.lockR)) continue;
@@ -965,7 +985,7 @@ function hitBarrier(m, w, n, x, y, z) {
   if (w.hp <= 0) { m.walls2.splice(m.walls2.indexOf(w), 1); m.events.push(['wb', w.id]); }
 }
 // an enemy barrier under the crosshair within reach: { w, t, h } or null
-function barrierUnder(m, p, maxD = 400) {
+function barrierUnder(m, p, maxD = 3000) {
   if (!m.walls2 || !m.walls2.length) return null;
   const [ex, ey] = eyePos(p.x, p.y, p.yaw, p.lean || 0), eye = (p.z || 0) + STANCES[p.stance].eye;
   const dx = Math.cos(p.yaw), dy = Math.sin(p.yaw), lim = maxD;
@@ -1482,9 +1502,9 @@ function stepMatch(m) {
     const tgt = m.phase === 'fight' && ready ? aimTarget(m, p) : null;
     // no enemy under the crosshair? a green panel close enough counts as a target too (shoot it down)
     let pan = null;
-    if (!tgt && m.phase === 'fight' && ready && !p.bot && m.panelHp && (p.z || 0) < 10) {
+    if (!tgt && m.phase === 'fight' && ready && !p.bot && m.panelHp) {
       const [ex2, ey2] = eyePos(p.x, p.y, p.yaw, p.lean || 0);
-      pan = panelUnder(ex2, ey2, STANCES[p.stance].eye, p.yaw, p.pitch);
+      pan = panelUnder(ex2, ey2, (p.z || 0) + STANCES[p.stance].eye, p.yaw, p.pitch);
     }
     const bar = !tgt && !pan && m.phase === 'fight' && !p.running && (!p.bot || p.brain.seen > p.brain.react) && !(p.bot && p.brain.dummy) ? barrierUnder(m, p) : null;
     const rampage = p.fx.rampage > 0 && m.phase === 'fight' && !p.running && !p.bot ? true : p.fx.rampage > 0 && p.bot && p.brain.seen > 0;
@@ -1506,7 +1526,7 @@ function stepMatch(m) {
       const wn = p.weapon || 'rifle', W = WEAPONS[wn];
       p.cool = W.cooldown * rate; p.sinceShot = 0;
       const [ox, oy] = eyePos(p.x, p.y, p.yaw, p.lean || 0), eye = (p.z || 0) + STANCES[p.stance].eye;
-      let d = bar ? bar.t : (rayWall(ox, oy, Math.cos(p.yaw), Math.sin(p.yaw), 900) || { t: 900 }).t;
+      let d = bar ? bar.t : (rayWall3(ox, oy, eye, Math.cos(p.yaw), Math.sin(p.yaw), Math.tan(p.pitch), 3000) || { t: 3000 }).t;
       const ex = Math.round(ox + Math.cos(p.yaw) * d), ey = Math.round(oy + Math.sin(p.yaw) * d), ez = Math.round(bar ? bar.h : clamp(eye + d * Math.tan(p.pitch), 0, 200));
       m.events.push(['s', p.id, p.burst, ex, ey, ez, W.code]);
       if (bar && (!W.range || d <= W.range)) hitBarrier(m, bar.w, 1, ex, ey, ez);
