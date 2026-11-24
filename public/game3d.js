@@ -998,7 +998,6 @@
     [...$('pips-a').children].forEach((p, i) => p.classList.toggle('on', i < msg.score.A));
     [...$('pips-b').children].forEach((p, i) => p.classList.toggle('on', i < msg.score.B));
     $('h-round').textContent = `ROUND ${msg.round}`;
-    $('aim-hint').hidden = msg.round > 1;
     if (row) updateGrenadeHud(row);
     if (row) {
       const segs = [...$('me-hp').children], per = match.cfg.dmg;
