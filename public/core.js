@@ -369,38 +369,58 @@ function clear3(x1, y1, z1, x2, y2, z2) {
 // can a point at height az see a point at height bz? (defaults: two standing players' eyes on the ground)
 function lineOfSight(ax, ay, bx, by, az = 33, bz = 33) { return clear3(ax, ay, az, bx, by, bz); }
 
-// Navigation grid for bots (16px cells, cells a player can't stand in are blocked)
-const CELL = 16, GW = MAP.w / CELL, GH = MAP.h / CELL;
-const navBlocked = Array.from({ length: GW * GH }, (_, i) => {
-  const x = (i % GW) * CELL + CELL / 2, y = Math.floor(i / GW) * CELL + CELL / 2;
-  return blocked(x, y, P.r + 2) || [...UP.stairs, ...UP.ladders].some(st => inRect([st[0] - 14, st[1] - 14, st[2] + 28, st[3] + 28], x, y));
-});
+// Navigation for bots: two layers of 16 px cells. Layer 0 is the ground (and the staircases, at the height of
+// their steps); layer 1 is the upper floor. A bot can step between neighbouring cells (in either layer) when their
+// heights differ by a step or less, so the staircases are the way between floors. navH = standing height, -1 = no.
+const CELL = 16, GW = MAP.w / CELL, GH = MAP.h / CELL, NC = GW * GH;
+const navH = new Float32Array(2 * NC).fill(-1);
+for (let i = 0; i < NC; i++) {
+  const x = (i % GW) * CELL + CELL / 2, y = Math.floor(i / GW) * CELL + CELL / 2, r = rampAt(x, y), h = r >= 0 ? r : 0;
+  if (!blockedAt(x, y, P.r + 2, h) && !stairBlocks(x, y, h)) navH[i] = h;
+  if (onSlab(x, y) && !blockedAt(x, y, P.r + 2, UP.floor)) navH[NC + i] = UP.floor;
+}
 const cellOf = (x, y) => Math.max(0, Math.min(GW - 1, Math.floor(x / CELL))) + Math.max(0, Math.min(GH - 1, Math.floor(y / CELL))) * GW;
-
-function findPath(fx, fy, tx, ty) {
-  const start = cellOf(fx, fy), goal = cellOf(tx, ty);
-  const prev = new Int32Array(GW * GH).fill(-1);
-  prev[start] = start;
+// the node for a spot at height z (the floor you're on there), searching nearby cells if that one is blocked
+function nodeAt(x, y, z) {
+  const c0 = cellOf(x, y), cx0 = c0 % GW, cy0 = (c0 / GW) | 0, up = z >= UP.floor - 20 ? 1 : 0;
+  for (let rad = 0; rad <= 2; rad++) for (let dy = -rad; dy <= rad; dy++) for (let dx = -rad; dx <= rad; dx++) {
+    if (Math.max(Math.abs(dx), Math.abs(dy)) !== rad) continue;
+    const cx = cx0 + dx, cy = cy0 + dy; if (cx < 0 || cy < 0 || cx >= GW || cy >= GH) continue;
+    const c = cx + cy * GW;
+    for (const L of up ? [1, 0] : [0, 1]) { const n = L * NC + c; if (navH[n] >= 0 && Math.abs(navH[n] - z) < 30) return n; }
+  }
+  return -1;
+}
+const STEPS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+const navPrev = new Int32Array(2 * NC);
+function findPath(fx, fy, fz, tx, ty, tz) {
+  const start = nodeAt(fx, fy, fz), goal = nodeAt(tx, ty, tz);
+  if (start < 0 || goal < 0) return [];
+  navPrev.fill(-1); navPrev[start] = start;
   const q = [start];
   for (let qi = 0; qi < q.length; qi++) {
-    const c = q[qi];
-    if (c === goal) break;
-    const cx = c % GW, cy = (c / GW) | 0;
-    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+    const n = q[qi];
+    if (n === goal) break;
+    const c = n % NC, h = navH[n], cx = c % GW, cy = (c / GW) | 0;
+    for (const [dx, dy] of STEPS) {
       const nx = cx + dx, ny = cy + dy;
       if (nx < 0 || ny < 0 || nx >= GW || ny >= GH) continue;
-      const n = nx + ny * GW;
-      if (prev[n] !== -1 || (navBlocked[n] && n !== goal)) continue;
-      if (dx && dy && (navBlocked[cx + dx + cy * GW] || navBlocked[cx + (cy + dy) * GW])) continue; // no corner cutting
-      prev[n] = c; q.push(n);
+      for (const L of [0, 1]) {
+        const m2 = L * NC + nx + ny * GW, h2 = navH[m2];
+        if (h2 < 0 || navPrev[m2] !== -1 || Math.abs(h2 - h) > 14) continue;
+        if (dx && dy) {   // no corner cutting
+          const s1 = L * NC + cx + dx + cy * GW, s2 = L * NC + cx + (cy + dy) * GW;
+          if (navH[s1] < 0 || navH[s2] < 0 || Math.abs(navH[s1] - h) > 14 || Math.abs(navH[s2] - h) > 14) continue;
+        }
+        navPrev[m2] = n; q.push(m2);
+      }
     }
   }
-  if (prev[goal] === -1) return [];
+  if (navPrev[goal] === -1) return [];
   const path = [];
-  for (let c = goal; c !== start; c = prev[c]) path.push([(c % GW) * CELL + CELL / 2, ((c / GW) | 0) * CELL + CELL / 2]);
+  for (let n = goal; n !== start; n = navPrev[n]) { const c = n % NC; path.push([(c % GW) * CELL + CELL / 2, ((c / GW) | 0) * CELL + CELL / 2]); }
   return path.reverse();
 }
-
 // ---------- Matchmaking ----------
 const MODES = { '1v1': 2, '2v2': 4, extraction: 8 };   // extraction = 4v4
 const queues = { '1v1': [], '2v2': [], extraction: [] };
@@ -819,26 +839,28 @@ function botGoal(m, b) {
     if (g.state === 'carried' && g.carrier === b.id) return { x: home[0], y: home[1], mode: 'go' };
     const cards = m.cards || [];
     if (cards.some(c => c.carrier === b.id)) { const r = MAP.reboot[b.team]; return { x: r[0], y: r[1], mode: 'go' }; }   // bring a teammate back
-    const loose = cards.filter(c => !c.carrier && c.z < 10 && Math.hypot(c.x - b.x, c.y - b.y) < 320);
-    if (loose.length && g.state !== 'carried') { const c = loose[0]; return { x: c.x, y: c.y, mode: 'go' }; }
-    if (g.state === 'carried') { const c = m.players.find(o => o.id === g.carrier); return c ? { x: c.x, y: c.y, mode: 'escort' } : null; }
+    const loose = cards.filter(c => !c.carrier && Math.hypot(c.x - b.x, c.y - b.y) < 320);
+    if (loose.length && g.state !== 'carried') { const c = loose[0]; return { x: c.x, y: c.y, z: c.z, mode: 'go' }; }
+    if (g.state === 'carried') { const c = m.players.find(o => o.id === g.carrier); return c ? { x: c.x, y: c.y, z: c.z || 0, mode: 'escort' } : null; }
     if (Math.hypot(g.x - b.x, g.y - b.y) < EXTRACT.extractR - 10) return { x: g.x, y: g.y, mode: 'hold' };
     return { x: g.x, y: g.y, mode: 'go' };
   }
-  if (g.state === 'carried') { const c = m.players.find(o => o.id === g.carrier); return c ? { x: c.x, y: c.y, mode: 'go' } : null; }
+  if (g.state === 'carried') { const c = m.players.find(o => o.id === g.carrier); return c ? { x: c.x, y: c.y, z: c.z || 0, mode: 'go' } : null; }
   if (g.state === 'dropped') return { x: g.x, y: g.y, mode: 'go' };
-  if (!b.brain.guard) {   // pick a spot to hold around the gem room
-    for (let k = 0; k < 30; k++) {
+  if (!b.brain.guard) {   // a spot to hold: around the gem, or (sometimes) upstairs by a window over it
+    if (Math.random() < 0.4) b.brain.guard = randomSpot([g.x, g.y], 300, null, 1);
+    for (let k = 0; k < 30 && !b.brain.guard; k++) {
       const a = Math.random() * Math.PI * 2, d = 40 + Math.random() * 120, x = g.x + Math.cos(a) * d, y = g.y + Math.sin(a) * d;
-      if (!blocked(x, y, P.r + 4)) { b.brain.guard = [x, y]; break; }
+      if (!blocked(x, y, P.r + 4)) b.brain.guard = [x, y, 0];
     }
   }
-  return b.brain.guard ? { x: b.brain.guard[0], y: b.brain.guard[1], mode: Math.hypot(b.brain.guard[0] - b.x, b.brain.guard[1] - b.y) < 20 ? 'hold' : 'go' } : null;
+  const gd = b.brain.guard;
+  return gd ? { x: gd[0], y: gd[1], z: gd[2] || 0, mode: reached(b, gd, 20) ? 'hold' : 'go' } : null;
 }
-function followPath(b, inp, tx, ty) {
-  const br = b.brain;
-  if (--br.repath <= 0 || !br.path.length || br.pathTo !== Math.round(tx / 16) + ',' + Math.round(ty / 16)) {
-    br.path = findPath(b.x, b.y, tx, ty); br.repath = 20; br.pathTo = Math.round(tx / 16) + ',' + Math.round(ty / 16);
+function followPath(b, inp, tx, ty, tz = 0) {
+  const br = b.brain, key = Math.round(tx / 16) + ',' + Math.round(ty / 16) + ',' + (tz > 40 ? 1 : 0);
+  if (--br.repath <= 0 || !br.path.length || br.pathTo !== key) {
+    br.path = findPath(b.x, b.y, b.z || 0, tx, ty, tz); br.repath = 20; br.pathTo = key;
   }
   while (br.path.length && Math.hypot(br.path[0][0] - b.x, br.path[0][1] - b.y) < 6) br.path.shift();
   if (br.path.length) {
@@ -849,18 +871,24 @@ function followPath(b, inp, tx, ty) {
   return null;
 }
 
-// a random spot a bot can stand on (on the ground), near `near` (within r px) or anywhere; null if none found
-function randomSpot(near, r, test) {
-  for (let k = 0; k < 40; k++) {
+// A random spot a bot can stand on, near `near` (within r px) or anywhere: [x, y, z] or null.
+// layer: 0 = ground, 1 = upstairs, 'any' = either (upstairs about 40% of the time when there is one).
+function randomSpot(near, r, test, layer = 0) {
+  for (let k = 0; k < 60; k++) {
     const x = near ? near[0] + (Math.random() * 2 - 1) * r : 48 + Math.random() * (MAP.w - 96);
     const y = near ? near[1] + (Math.random() * 2 - 1) * r : 48 + Math.random() * (MAP.h - 96);
     if (x < 40 || y < 40 || x > MAP.w - 40 || y > MAP.h - 40) continue;
-    if (blocked(x, y, P.r + 6) || navBlocked[cellOf(x, y)]) continue;
-    if (test && !test(x, y)) continue;
-    return [x, y];
+    const c = cellOf(x, y), L = layer === 'any' ? (navH[NC + c] >= 0 && Math.random() < 0.4 ? 1 : 0) : layer;
+    const h = navH[L * NC + c];
+    if (h < 0 || (L === 0 && h > 0)) continue;   // not on the stairs themselves
+    if (blockedAt(x, y, P.r + 6, h)) continue;
+    if (test && !test(x, y, h)) continue;
+    return [x, y, h];
   }
   return null;
 }
+const layerOf = o => ((o.z || 0) >= UP.floor - 20 ? 1 : 0);
+const reached = (p, s, r) => Math.hypot(s[0] - p.x, s[1] - p.y) < r && Math.abs((s[2] || 0) - (p.z || 0)) < 30;
 
 // Bots: they wander between random spots (stopping now and then to check an angle), walk instead of run when
 // enemies may be close, react a moment late when they first spot you (and their first shots are off), and
@@ -877,9 +905,9 @@ function botThink(m, b) {
   const eye = (b.z || 0) + STANCES[b.stance].eye;
   const canSee = o => { curLos = 'ignore'; const v = lineOfSight(b.x, b.y, o.x, o.y, eye, (o.z || 0) + STANCES[o.stance].height * 0.6); curLos = null; return v; };
   const near = o => Math.hypot(o.x - b.x, o.y - b.y);
-  const walkTo = (x, y, run) => { const yy = followPath(b, inp, x, y); if (yy != null) inp.yaw = yy; inp.run = run; return yy != null; };
+  const walkTo = (x, y, run, z = 0) => { const yy = followPath(b, inp, x, y, z); if (yy != null) inp.yaw = yy; inp.run = run; return yy != null; };
   if (!foes.length) {
-    if (goal && goal.mode !== 'hold') walkTo(goal.x, goal.y, true);
+    if (goal && goal.mode !== 'hold') walkTo(goal.x, goal.y, true, goal.z || 0);
     return inp;
   }
   // target: the closest enemy it can see, otherwise the closest one
@@ -901,10 +929,10 @@ function botThink(m, b) {
   if (br.retreatT > 0) {
     br.retreatT--;
     if (sees) { br.seen++; aimAt(); } else br.seen = 0;
-    const moving = walkTo(br.retreatTo[0], br.retreatTo[1], !sees);
+    const moving = walkTo(br.retreatTo[0], br.retreatTo[1], !sees, br.retreatTo[2] || 0);
     if (sees) inp.yaw = Math.atan2(dy, dx) + br.wobble[0];   // backs off facing you, still shooting
-    if (!moving || Math.hypot(br.retreatTo[0] - b.x, br.retreatTo[1] - b.y) < 12) { inp.mx = inp.my = 0; inp.crouch = br.hurtT > 0; }
-    if (br.retreatT <= 0) { br.peekT = 60 + Math.random() * 90; br.lastSeen = [t.x, t.y]; }
+    if (!moving || reached(b, br.retreatTo, 12)) { inp.mx = inp.my = 0; inp.crouch = br.hurtT > 0; }
+    if (br.retreatT <= 0) { br.peekT = 60 + Math.random() * 90; br.lastSeen = [t.x, t.y, t.z || 0]; }
     return inp;
   }
 
@@ -914,7 +942,7 @@ function botThink(m, b) {
       br.aimErr = [(Math.random() - 0.5) * 0.45, (Math.random() - 0.5) * 0.2];
       br.style = Math.random();   // how it fights this time: strafe / stand / crouch
     }
-    br.path = []; br.seen++; br.lastSeen = [t.x, t.y]; br.lostT = 0; br.pauseT = 0;
+    br.path = []; br.seen++; br.lastSeen = [t.x, t.y, t.z || 0]; br.lostT = 0; br.pauseT = 0;
     aimAt();
     // movement while fighting: strafe, stand still, or crouch (changes now and then)
     if (--br.strafeT <= 0) { br.strafe *= -1; br.strafeT = 25 + Math.random() * 45; if (Math.random() < 0.3) br.style = Math.random(); }
@@ -939,7 +967,7 @@ function botThink(m, b) {
     // back off when hurt (or now and then after a long fight), unless it's holding the objective
     const busy = carrying || (goal && goal.mode === 'hold');
     if (!busy && ((br.hurtT > 100 && b.hp <= 60 && Math.random() < 0.35) || (br.seen > 90 && Math.random() < 0.006))) {
-      const away = randomSpot([b.x - dx / dist * 140, b.y - dy / dist * 140], 110, (x, y) => !lineOfSight(x, y, t.x, t.y, 33, 33) && Math.hypot(x - t.x, y - t.y) > dist);
+      const away = randomSpot([b.x - dx / dist * 140, b.y - dy / dist * 140], 110, (x, y, h) => !lineOfSight(x, y, t.x, t.y, h + 33, (t.z || 0) + 33) && Math.hypot(x - t.x, y - t.y) > dist, layerOf(b));
       if (away) { br.retreatTo = away; br.retreatT = 70 + Math.random() * 80; br.path = []; }
     }
     // grenades: often an opener while they line up their first shot, sometimes mid-fight
@@ -961,7 +989,7 @@ function botThink(m, b) {
   if (br.peekT > 0) {
     br.peekT--;
     if (br.lastSeen) inp.yaw = Math.atan2(br.lastSeen[1] - b.y, br.lastSeen[0] - b.x);
-    if (br.peekT < 30 && br.lastSeen) walkTo(br.lastSeen[0], br.lastSeen[1], false);
+    if (br.peekT < 30 && br.lastSeen) walkTo(br.lastSeen[0], br.lastSeen[1], false, br.lastSeen[2] || 0);
     return inp;
   }
   // stopped to check an angle: look around a bit
@@ -973,27 +1001,28 @@ function botThink(m, b) {
     return inp;
   }
   if (goal) {   // objective, each bot by its own route (a detour point near it first)
-    if (goal.mode === 'go' && !(m.gem && m.gem.carrier === b.id) && br.via === undefined) br.via = Math.random() < 0.7 ? randomSpot([goal.x, goal.y], 280) : null;
-    if (br.via && Math.hypot(br.via[0] - b.x, br.via[1] - b.y) < 40) br.via = null;
-    const [gx, gy] = br.via || (goal.mode === 'escort' ? [goal.x + 30, goal.y + 30] : [goal.x, goal.y]);
-    walkTo(gx, gy, !cautious || (m.gem && m.gem.carrier === b.id));
+    if (goal.mode === 'go' && !(m.gem && m.gem.carrier === b.id) && br.via === undefined)
+      br.via = Math.random() < 0.8 ? randomSpot([(b.x + goal.x) / 2, (b.y + goal.y) / 2], 360, null, 'any') : null;
+    if (br.via && reached(b, br.via, 40)) br.via = null;
+    const [gx, gy, gz] = br.via || (goal.mode === 'escort' ? [goal.x + 30, goal.y + 30, goal.z || 0] : [goal.x, goal.y, goal.z || 0]);
+    if (!walkTo(gx, gy, !cautious || (m.gem && m.gem.carrier === b.id), gz || 0) && br.via) br.via = null;
     if (cautious && !(m.gem && m.gem.carrier === b.id) && Math.random() < 0.004) { br.pauseT = 30 + Math.random() * 70; br.lookYaw = b.yaw; br.pauseCrouch = Math.random() < 0.4; }
     return inp;
   }
   // no objective: check where it last saw someone, otherwise roam (often toward where enemies are)
   if (br.lastSeen && br.lostT < 150) {
-    if (!walkTo(br.lastSeen[0], br.lastSeen[1], false) || Math.hypot(br.lastSeen[0] - b.x, br.lastSeen[1] - b.y) < 20) br.lastSeen = null;
+    if (!walkTo(br.lastSeen[0], br.lastSeen[1], false, br.lastSeen[2] || 0) || reached(b, br.lastSeen, 20)) br.lastSeen = null;
     return inp;
   }
-  if (!br.roam || --br.roamT <= 0 || Math.hypot(br.roam[0] - b.x, br.roam[1] - b.y) < 24) {
+  if (!br.roam || --br.roamT <= 0 || reached(b, br.roam, 24)) {
     if (br.roam && Math.random() < 0.6) { br.pauseT = 40 + Math.random() * 110; br.lookYaw = b.yaw; br.lookT = 0; br.pauseCrouch = Math.random() < 0.35; }
     const toward = foes[(Math.random() * foes.length) | 0];
-    br.roam = (Math.random() < 0.55 ? randomSpot([toward.x, toward.y], 300) : null) || randomSpot(null) || [t.x, t.y];
+    br.roam = (Math.random() < 0.5 ? randomSpot([toward.x, toward.y], 300, null, Math.random() < 0.6 ? layerOf(toward) : 'any') : null) || randomSpot(null, 0, null, 'any') || [t.x, t.y, t.z || 0];
     br.roamT = 300 + Math.random() * 300;
     br.path = [];
     if (br.pauseT > 0) return inp;
   }
-  if (!walkTo(br.roam[0], br.roam[1], !cautious)) br.roamT = 0;
+  if (!walkTo(br.roam[0], br.roam[1], !cautious, br.roam[2] || 0)) br.roamT = 0;
   if (cautious && Math.random() < 0.003) { br.pauseT = 30 + Math.random() * 80; br.lookYaw = b.yaw; br.lookT = 0; br.pauseCrouch = Math.random() < 0.4; }
   return inp;
 }
