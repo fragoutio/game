@@ -1485,11 +1485,14 @@
   }
   function trapMesh(t) {
     const [, x, y, z, ceil, team] = t, g = new THREE.Group();
-    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.46, 0.08, 8), lam(0x3a3d44)); g.add(base);
-    for (let i = 0; i < 7; i++) {
-      const sp = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.32, 4), basic(i ? 0xc0c4cc : TEAM[team].hex));
-      const a = i / 6 * Math.PI * 2, d = i ? 0.26 : 0; sp.position.set(Math.cos(a) * d, 0.2, Math.sin(a) * d); g.add(sp);
+    const R = Core.TRAP_R * S;   // big plate covered in spikes, with a team-coloured rim
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(R, R * 1.04, 0.08, 20), lam(0x3a3d44)); g.add(base);
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(R, 0.06, 4, 28), basic(TEAM[team].hex)); rim.rotation.x = Math.PI / 2; rim.position.y = 0.05; g.add(rim);
+    for (const [ring, count] of [[0, 1], [0.3, 7], [0.6, 12], [0.88, 18]]) for (let i = 0; i < count; i++) {
+      const sp = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.5, 4), basic(0xc0c4cc));
+      const a = (i + ring) / count * Math.PI * 2; sp.position.set(Math.cos(a) * R * ring, 0.29, Math.sin(a) * R * ring); g.add(sp);
     }
+    mergeStatic(g, new Set());   // a few meshes instead of ~40
     if (ceil) { g.rotation.x = Math.PI; g.position.set(x * S, z * S - 0.2, y * S); } else g.position.set(x * S, z * S + 0.04, y * S);
     scene.add(g); return g;
   }

@@ -1041,6 +1041,7 @@ function botThink(m, b) {
 const KINDS = ['boom', 'frag', 'therm'];
 const KIND_CODE = { boom: 0, frag: 1, therm: 2 };
 // src codes for damage/knockout events: 0 gun, 1 boomerang, 2 frag, 3 fire
+const TRAP_R = 64;   // spike trap size (radius, px): anyone passing over or under this area sets it off
 const DMG_SRC = { gun: 0, boom: 1, frag: 2, therm: 3, shotgun: 4, trap: 5 };
 // a barrier takes n hits; at 0 it breaks
 function hitBarrier(m, w, n, x, y, z) {
@@ -1117,6 +1118,7 @@ function damage(m, o, amount, owner, src, head, x, y, z) {
   if (o.hp <= 0) {
     o.alive = false; o.hp = 0;
     if (owner) owner.kills++;
+    if (owner && owner !== o && OPS[owner.op]) owner.ult = Math.min(OPS[owner.op].ult.charge * 60, owner.ult + OPS[owner.op].ult.charge * 60 * 0.3);   // a knockout charges 30% of your ultimate
     m.events.push(['k', owner ? owner.id : 0, o.id, head ? 1 : 0, src]);
     if (m.practice) o.respawnT = 84;
     if (m.mode === 'extraction' && o.team !== m.attack) o.respawnT = EXTRACT.defRespawn;   // defenders are back in 5 s
@@ -1515,7 +1517,7 @@ function stepAbilities(m) {
   }
   m.zones = m.zones.filter(z => --z.t > 0);
   if (fight) for (const t of m.traps) {   // an enemy passing over or under a spike trap sets it off
-    const o = m.players.find(o => o.alive && o.team !== t.team && Math.hypot(o.x - t.x, o.y - t.y) < 22 && Math.abs((o.z || 0) - t.z) <= 90);
+    const o = m.players.find(o => o.alive && o.team !== t.team && Math.hypot(o.x - t.x, o.y - t.y) < TRAP_R && Math.abs((o.z || 0) - t.z) <= 90);
     if (!o) continue;
     t.done = true;
     m.events.push(['tr', Math.round(t.x), Math.round(t.y), Math.round(t.z), o.id]);
@@ -1752,5 +1754,5 @@ function start(opts = {}) {
 
 // identifies the map, so a client only plays on a server with the same one
 const MAP_ID = MAP.w + 'x' + MAP.h + '-' + MAP.walls.length + '-' + UP.ladders.length;
-return { setRailBroken, railSpot, mantleSpot, startMantle, OPS, OP_LIST, setZones, setWalls, setLosTeam, BARRIER_H, startDash, MAP_ID, slabRects, onSlab, ladderAt, rappelSpot, connect, start, tick, matchmake, createPractice, MAP, P, LOOK_SIZES, STANCES, KINDS, recoilKick, blocked, lineOfSight, stepMovement, castRay, predictThrow, segmentClear, eyePos, setBroken, panelUnder, EXTRACT, MODES, clear3, supportAt, blockedAt, _matches: matches, WEAPONS, WEAPON_BY_CODE, weaponDamage, weaponKick, get botFillMs() { return BOT_FILL_MS; } };
+return { TRAP_R, setRailBroken, railSpot, mantleSpot, startMantle, OPS, OP_LIST, setZones, setWalls, setLosTeam, BARRIER_H, startDash, MAP_ID, slabRects, onSlab, ladderAt, rappelSpot, connect, start, tick, matchmake, createPractice, MAP, P, LOOK_SIZES, STANCES, KINDS, recoilKick, blocked, lineOfSight, stepMovement, castRay, predictThrow, segmentClear, eyePos, setBroken, panelUnder, EXTRACT, MODES, clear3, supportAt, blockedAt, _matches: matches, WEAPONS, WEAPON_BY_CODE, weaponDamage, weaponKick, get botFillMs() { return BOT_FILL_MS; } };
 });
