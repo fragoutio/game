@@ -1597,10 +1597,10 @@ function stepMatch(m) {
     const rampage = p.fx.rampage > 0 && m.phase === 'fight' && !p.running && !p.bot ? true : p.fx.rampage > 0 && p.bot && p.brain.seen > 0;
     p.onT = tgt || pan || bar || rampage ? (p.onT || 0) + 1 : 0;                // how long the crosshair has been on someone
     if (p.switchT > 0) p.switchT--;
-    if (!p.bot && m.phase === 'fight') {   // keep your crosshair on a glass rail for 3 s and it shatters
+    if (!p.bot && m.phase === 'fight') {   // keep your crosshair on a glass rail for 1.5 s and it shatters
       const gl = glassUnder(p);
       if (gl && gl.id === p.glassId) p.glassT = (p.glassT || 0) + 1; else { p.glassId = gl ? gl.id : -1; p.glassT = gl ? 1 : 0; }
-      if (gl && p.glassT >= 180) { m.railBroken.add(gl.id); m.events.push(['gb', gl.id, Math.round(gl.x), Math.round(gl.y), Math.round(gl.z)]); p.glassT = 0; p.glassId = -1; }
+      if (gl && p.glassT >= 90) { m.railBroken.add(gl.id); m.events.push(['gb', gl.id, Math.round(gl.x), Math.round(gl.y), Math.round(gl.z)]); p.glassT = 0; p.glassId = -1; }
     } else p.glassT = 0;
     if (pan && p.cool <= 0 && p.switchT <= 0 && p.onT > P.fireDelay) {
       const wn = p.weapon || 'rifle', W = WEAPONS[wn];
@@ -1661,7 +1661,7 @@ function stepMatch(m) {
       players: m.players.map(p => [p.id, r1(p.x), r1(p.y), p.hp, p.alive ? 1 : 0, r3(p.yaw), r3(p.pitch), p.kills,
         STANCE_CODE[p.stance] + (p.running ? 4 : 0) + (p.ads ? 8 : 0) + (p.lean < 0 ? 16 : p.lean > 0 ? 32 : 0) + (p.rap ? 64 : 0) + (p.onLadder ? 128 : 0), Math.ceil(p.cd.boom / 6), Math.ceil(p.cd.frag / 6), Math.ceil(p.cd.therm / 6), WEAPONS[p.weapon || 'rifle'].code + (p.switchT > 0 ? 2 : 0), r1(p.z || 0), p.alive ? 0 : Math.ceil((p.respawnT || 0) / 60), Math.ceil((p.tac || 0) / 60),
         OPS[p.op] ? Math.floor(p.ult / (OPS[p.op].ult.charge * 60) * 100) : 0,
-        (p.fx.over > 0 ? 1 : 0) + (p.fx.rush > 0 ? 2 : 0) + (p.fx.reveal > 0 ? 4 : 0) + (p.fx.slow > 0 ? 8 : 0) + (p.fx.rampage > 0 ? 16 : 0), OPS[p.op] && OPS[p.op].tac.charges ? p.tacCh : -1, Math.round((p.glassT || 0) / 1.8)]),
+        (p.fx.over > 0 ? 1 : 0) + (p.fx.rush > 0 ? 2 : 0) + (p.fx.reveal > 0 ? 4 : 0) + (p.fx.slow > 0 ? 8 : 0) + (p.fx.rampage > 0 ? 16 : 0), OPS[p.op] && OPS[p.op].tac.charges ? p.tacCh : -1, Math.round((p.glassT || 0) / 0.9)]),
       walls: (m.walls2 || []).map(w => [w.id, r1(w.x1), r1(w.y1), r1(w.x2), r1(w.y2), r1(w.z), w.hp, w.team]),
       traps: (m.traps || []).map(t => [t.id, r1(t.x), r1(t.y), r1(t.z), t.ceil ? 1 : 0, t.team]),
       zones: (m.zones || []).map(z => [z.k, r1(z.x), r1(z.y), z.r, Math.ceil(z.t / 60), z.team]),
