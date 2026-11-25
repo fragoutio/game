@@ -80,6 +80,34 @@ const MAP = (() => {
   };
 })();
 const UP = MAP.upper;
+// Glass handrails (UP.rail px tall) around the gaps in the upper floor and around the stairwells, so nobody falls
+// by accident. Openings are left where a ladder comes up and where you step off the top of a staircase.
+// Space vaults over a rail (see railSpot); X still rappels down past one.
+(function buildRails() {
+  const T = 4, rails = [];
+  // an axis-aligned edge from (x1,y1) to (x2,y2), minus gaps [[a, b]] along it
+  const edge = (x1, y1, x2, y2, gaps) => {
+    const horiz = y1 === y2, a0 = horiz ? x1 : y1, a1 = horiz ? x2 : y2;
+    let s = a0;
+    for (const [g0, g1] of [...gaps.filter(g => g[1] > a0 && g[0] < a1).sort((p, q) => p[0] - q[0]), [a1, a1]]) {
+      const e = Math.max(s, Math.min(g0, a1));
+      if (e - s > 6) rails.push(horiz ? [s, y1 - T / 2, e - s, T] : [x1 - T / 2, s, T, e - s]);
+      s = Math.max(s, g1);
+    }
+  };
+  const ladderGaps = (horiz, at) => UP.ladders.filter(l => horiz ? Math.abs(l[1] - at) < 2 || Math.abs(l[1] + l[3] - at) < 2 : Math.abs(l[0] - at) < 2 || Math.abs(l[0] + l[2] - at) < 2)
+    .map(l => (horiz ? [l[0] - 10, l[0] + l[2] + 10] : [l[1] - 10, l[1] + l[3] + 10]));
+  for (const [x, y, w, h] of UP.holes) {
+    edge(x, y, x + w, y, ladderGaps(true, y)); edge(x, y + h, x + w, y + h, ladderGaps(true, y + h));
+    edge(x, y, x, y + h, ladderGaps(false, x)); edge(x + w, y, x + w, y + h, ladderGaps(false, x + w));
+  }
+  for (const [x, y, w, h, dir] of UP.stairs) {   // stairwells: open beside the flat top (where you step off)
+    const flat = dir === 'N' ? [y - 1, y + h * 0.2] : [y + h * 0.8, y + h + 1];
+    edge(x, y, x, y + h, [flat]); edge(x + w, y, x + w, y + h, [flat]);
+    edge(x, dir === 'N' ? y + h : y, x + w, dir === 'N' ? y + h : y, []);   // the low end
+  }
+  UP.rails = rails;
+})();
 const inRect = (r, x, y) => x >= r[0] && x <= r[0] + r[2] && y >= r[1] && y <= r[1] + r[3];
 const inOpen = (r, x, y) => x > r[0] && x < r[0] + r[2] && y > r[1] && y < r[1] + r[3];
 // is there upper floor at (x, y)? (inside a building, not over a gap or a stairwell)
@@ -272,10 +300,10 @@ const wallOn = i => !curBroken || !curBroken.has(i);
 function setBroken(set) { curBroken = set; }
 // something solid at (x, y) for a body standing at height z: walls you're below the top of, railings when
 // you're up on a balcony. blocked() is the ground-level version.
-function blockedAt(x, y, r, z) {
+function blockedAt(x, y, r, z, noRails = false) {
   for (let i = 0; i < MAP.walls.length; i++) if (wallOn(i) && z < wallTop(i) && z + 30 > wallBot(i) && rectHitsCircle(MAP.walls[i], x, y, r)) return true;
   if (curWalls) for (const w of curWalls) if (z < w.z + BARRIER_H && z + 30 > w.z && segDist(x, y, w) < r + 4) return true;
-  if (z >= UP.floor - 4) for (const rl of UP.rails) if (rectHitsCircle(rl, x, y, r)) return true;
+  if (!noRails && z >= UP.floor - 4) for (const rl of UP.rails) if (rectHitsCircle(rl, x, y, r)) return true;
   return false;
 }
 const blocked = (x, y, r) => blockedAt(x, y, r, 0);
@@ -302,12 +330,6 @@ function clear3(x1, y1, z1, x2, y2, z2) {
     if (!wallOn(i)) continue;
     const w = MAP.walls[i], sp = span(w[0], w[1], w[2], w[3]);
     if (sp && Math.min(z1 + dz * sp[0], z1 + dz * sp[1]) < wallTop(i) && Math.max(z1 + dz * sp[0], z1 + dz * sp[1]) > wallBot(i)) return false;
-  }
-  for (const rl of UP.rails) {
-    const sp = span(rl[0], rl[1], rl[2], rl[3]);
-    if (!sp) continue;
-    const za = z1 + dz * sp[0], zb = z1 + dz * sp[1];
-    if (Math.min(za, zb) < UP.floor + UP.rail && Math.max(za, zb) > UP.floor) return false;
   }
   for (const st of UP.stairs) {   // under the steps of a staircase is solid
     const sp = span(st[0], st[1], st[2], st[3]);
@@ -614,7 +636,9 @@ function stepMovement(p, mx, my, run, crouch, runOk, canMove, ads = false) {
     dx = mx / len; dy = my / len;
   }
   const ox = p.x, oy = p.y, z = p.z || 0;
-  const ok = (x, y) => !blockedAt(x, y, P.r, z) && supportAt(x, y, z) <= z + 14 && !stairBlocks(x, y, z);   // no wall, no step too high, not into a staircase
+  const onRamp = rampAt(p.x, p.y) >= 0 && z > 6;   // up on a staircase: its side has a rail, so no walking off it
+  const ok = (x, y) => !blockedAt(x, y, P.r, z) && supportAt(x, y, z) <= z + 14 && !stairBlocks(x, y, z) &&
+    !(onRamp && rampAt(x, y) < 0 && supportAt(x, y, z) < z - 2);   // no wall, no step too high, not into a staircase
   if (ok(p.x + dx * spd, p.y)) p.x += dx * spd;
   if (ok(p.x, p.y + dy * spd)) p.y += dy * spd;
   if (p.stance === 'slide' && p.x === ox && p.y === oy) p.slideT = Math.min(p.slideT, 1);   // slid into a wall
@@ -637,11 +661,11 @@ function rappelSpot(p) {
   const dx = Math.cos(p.yaw || 0), dy = Math.sin(p.yaw || 0);
   for (let d = 4; d <= 48; d += 4) {
     const x = p.x + dx * d, y = p.y + dy * d;
-    if (blockedAt(x, y, 4, z)) return null;
+    if (blockedAt(x, y, 4, z, true)) return null;
     if (supportAt(x, y, z) < z - 2) {   // no floor here: hang just past the edge, clear of walls all the way down
       for (let t = d + 12; t <= d + 40; t += 4) {
         const tx = p.x + dx * t, ty = p.y + dy * t;
-        if (supportAt(tx, ty, z) < z - 2 && !blockedAt(tx, ty, P.r, z) && !blockedAt(tx, ty, P.r, 40) && !blockedAt(tx, ty, P.r, 0)) return [tx, ty];
+        if (supportAt(tx, ty, z) < z - 2 && !blockedAt(tx, ty, P.r, z, true) && !blockedAt(tx, ty, P.r, 40) && !blockedAt(tx, ty, P.r, 0)) return [tx, ty];
       }
       return null;
     }
@@ -1362,10 +1386,33 @@ function mantleSpot(p, team) {
   }
   return null;
 }
+// Facing a handrail up close (upstairs), or the side of a staircase you're standing on: Space vaults over it
+// (you drop down the other side). Returns the landing spot, or null.
+function railSpot(p) {
+  if (p.dashT > 0 || p.rap || p.onLadder) return null;
+  const z = p.z || 0, fx = Math.cos(p.yaw || 0), fy = Math.sin(p.yaw || 0);
+  const free = (x, y) => x > 32 + P.r && y > 32 + P.r && x < MAP.w - 32 - P.r && y < MAP.h - 32 - P.r && !blockedAt(x, y, P.r, z, true) && !stairBlocks(x, y, z);
+  if (z >= UP.floor - 4) {
+    for (let d = 4; d <= P.r + 14; d += 2) {
+      if (!UP.rails.some(rl => inRect(rl, p.x + fx * d, p.y + fy * d))) continue;
+      for (const extra of [P.r + 8, P.r + 16, P.r + 26]) { const x = p.x + fx * (d + extra), y = p.y + fy * (d + extra); if (free(x, y)) return [x, y]; }
+      return null;
+    }
+  }
+  if (rampAt(p.x, p.y) >= 0 && z > 6) {
+    const x = p.x + fx * (P.r + 6), y = p.y + fy * (P.r + 6);
+    if (rampAt(x, y) < 0 && supportAt(x, y, z) < z - 2) {
+      for (const d of [P.r + 18, P.r + 28]) { const tx = p.x + fx * d, ty = p.y + fy * d; if (free(tx, ty) && !blockedAt(tx, ty, P.r, 0)) return [tx, ty]; }
+    }
+  }
+  return null;
+}
 function startMantle(p, spot) { p.dashT = 14; p.dashTo = spot; p.vaultZ = p.z || 0; p.vault = 14; p.rap = null; p.stance = 'stand'; }
 function useTac(m, p, mx, my) {
   const op = OPS[p.op];
   if (!op || !p.alive) return;
+  if (p.vault) return;
+  { const rs = railSpot(p); if (rs) { startMantle(p, rs); m.events.push(['mt', p.id]); return; } }   // vault over a handrail
   if (p.op === 'warden') { const sp = mantleSpot(p, p.team); if (sp) { startMantle(p, sp); m.events.push(['mt', p.id]); return; } }   // vault over your barrier (no charge used)
   if (op.tac.charges) { if (!(p.tacCh > 0)) return; p.tacCh--; if (p.tac <= 0) p.tac = op.tac.cd * 60; }
   else { if (p.tac > 0) return; p.tac = op.tac.cd * 60; }
@@ -1656,5 +1703,5 @@ function start(opts = {}) {
 
 // identifies the map, so a client only plays on a server with the same one
 const MAP_ID = MAP.w + 'x' + MAP.h + '-' + MAP.walls.length + '-' + UP.ladders.length;
-return { mantleSpot, startMantle, OPS, OP_LIST, setZones, setWalls, setLosTeam, BARRIER_H, startDash, MAP_ID, slabRects, onSlab, ladderAt, rappelSpot, connect, start, tick, matchmake, createPractice, MAP, P, LOOK_SIZES, STANCES, KINDS, recoilKick, blocked, lineOfSight, stepMovement, castRay, predictThrow, segmentClear, eyePos, setBroken, panelUnder, EXTRACT, MODES, clear3, supportAt, blockedAt, _matches: matches, WEAPONS, WEAPON_BY_CODE, weaponDamage, weaponKick, get botFillMs() { return BOT_FILL_MS; } };
+return { railSpot, mantleSpot, startMantle, OPS, OP_LIST, setZones, setWalls, setLosTeam, BARRIER_H, startDash, MAP_ID, slabRects, onSlab, ladderAt, rappelSpot, connect, start, tick, matchmake, createPractice, MAP, P, LOOK_SIZES, STANCES, KINDS, recoilKick, blocked, lineOfSight, stepMovement, castRay, predictThrow, segmentClear, eyePos, setBroken, panelUnder, EXTRACT, MODES, clear3, supportAt, blockedAt, _matches: matches, WEAPONS, WEAPON_BY_CODE, weaponDamage, weaponKick, get botFillMs() { return BOT_FILL_MS; } };
 });

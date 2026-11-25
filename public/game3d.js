@@ -162,9 +162,25 @@
       const under = new THREE.Mesh(new THREE.BoxGeometry(sw * S, 0.02, sh * S), lam(0x2a2c31));
       under.position.set(slab.position.x, FZ - 0.19, slab.position.z); g.add(under);
     }
+    const glassMat = basic(0x9fd8ff, { transparent: true, opacity: 0.22, depthWrite: false }), RH = UPS.rail * S;
     for (const [rx, ry, rw, rh] of UPS.rails) {
-      const rail = new THREE.Mesh(new THREE.BoxGeometry(rw * S, UPS.rail * S, rh * S), railMat);
-      rail.position.set((rx + rw / 2) * S, FZ + UPS.rail * S / 2, (ry + rh / 2) * S); g.add(rail);
+      const glass = new THREE.Mesh(new THREE.BoxGeometry(rw * S, RH, rh * S), glassMat);
+      glass.position.set((rx + rw / 2) * S, FZ + RH / 2, (ry + rh / 2) * S); g.add(glass);
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(rw * S + 0.02, 0.05, rh * S + 0.02), railMat);
+      bar.position.set(glass.position.x, FZ + RH, glass.position.z); g.add(bar);
+    }
+    // the sides of each staircase: glass panes stepping up with the stairs (the flat top is left open to step off)
+    for (const [sx, sy, sw, sh, dir] of UPS.stairs) {
+      const n = 10, step = sh / n;
+      for (let k = 0; k < 8; k++) {
+        const top = Math.min(1, (k + 1) / n / 0.8) * FZ, zc = dir === 'S' ? sy + (k + 0.5) * step : sy + sh - (k + 0.5) * step;
+        for (const xx of [sx, sx + sw]) {
+          const pane = new THREE.Mesh(new THREE.BoxGeometry(0.06, RH, step * S), glassMat);
+          pane.position.set(xx * S, top + RH / 2, zc * S); g.add(pane);
+          const bar = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.05, step * S + 0.02), railMat);
+          bar.position.set(xx * S, top + RH, zc * S); g.add(bar);
+        }
+      }
     }
     // gaps in the floor get a glowing rim so you can see where to drop or rappel down
     for (const [hx, hy, hw, hh] of UPS.holes) {
@@ -1323,6 +1339,7 @@
   // ---------- Operator abilities: Space tactical, Tab ultimate ----------
   function useTactical() {
     const op = Core.OPS[me.op]; if (!op || !me.alive) return;
+    { const rs = Core.railSpot(me); if (rs) { me.tacN = (me.tacN || 0) + 1; Core.startMantle(me, rs); sfx.swap(); return; } }   // vault over a handrail
     if (me.op === 'warden' && match) { const sp = Core.mantleSpot(me, match.myTeam); if (sp) { me.tacN = (me.tacN || 0) + 1; Core.startMantle(me, sp); sfx.swap(); return; } }   // vault over your barrier
     if (op.tac.charges ? !(me.tacCh > 0) : me.tacLeft > 0) { sfx.denied(); toast(`${op.tac.name} ready in ${me.tacLeft} s`); return; }
     me.tacN = (me.tacN || 0) + 1;
@@ -1756,7 +1773,7 @@
     const tip = $('move-tip');
     if (me.alive && (ui === 'game' || ui === 'practice')) {
       const lad = Core.ladderAt(me.x, me.y);
-      tip.textContent = me.op === 'warden' && Core.mantleSpot(me, match.myTeam) ? 'SPACE  MANTLE OVER' : me.rap ? 'RAPPELLING · X LET GO' : Core.rappelSpot(me) ? 'X  RAPPEL DOWN' : lad ? (me.onLadder ? 'W / S  CLIMB · CAPS LOCK  LET GO' : 'W  CLIMB LADDER') : '';
+      tip.textContent = Core.railSpot(me) ? 'SPACE  VAULT OVER' : me.op === 'warden' && Core.mantleSpot(me, match.myTeam) ? 'SPACE  MANTLE OVER' : me.rap ? 'RAPPELLING · X LET GO' : Core.rappelSpot(me) ? 'X  RAPPEL DOWN' : lad ? (me.onLadder ? 'W / S  CLIMB · CAPS LOCK  LET GO' : 'W  CLIMB LADDER') : '';
       tip.hidden = !tip.textContent;
     } else tip.hidden = true;
 
