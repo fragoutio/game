@@ -208,7 +208,7 @@ Pick one in the LOCKER. Space = tactical (cooldown), Tab = ultimate (charges ove
 
 | Operator | Class | Tactical | Ultimate |
 |---|---|---|---|
-| RIOT | Assault | CLUSTER: a frag and thermite in one (blast, then a wall of fire) | RAMPAGE: 7 s of firing twice as fast, 60% less damage taken, nonstop fire |
+| RIOT | Assault | CLUSTER: a frag and thermite in one (blast, then a wall of fire) | RAMPAGE: 7 s of firing twice as fast with no recoil, headshots do nothing, 60% less body damage, nonstop fire |
 | VOLT | Skirmisher | BLINK: dash 5 m straight through walls | WARP: teleport to your warp point (hold Tab 4 s to set it) |
 | ECHO | Recon | PULSE: highlight enemies within 20 m for 7 s (through walls) | SWEEP: highlight every enemy for 15 s |
 | HAVEN | Support | PATCH: heal you and nearby teammates 2 health | REBOOT: bring every knocked-out teammate back next to you |

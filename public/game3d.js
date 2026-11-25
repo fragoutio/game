@@ -1028,7 +1028,7 @@
         const a = actors.get(ev[1]);
         if (mine) {
           // recoil: the same kick the server uses for bots, applied to your view
-          const k = Core.weaponKick(WEAPON_NAMES[ev[6] || 0], ev[2]);
+          const k = me.rampage ? { pitch: 0, yaw: 0 } : Core.weaponKick(WEAPON_NAMES[ev[6] || 0], ev[2]);
           if (ev[6] === 1) vm.pumpT = 0.4;   // rack the pump
           const steady = me.ads ? 0.75 : 1;   // aiming down the sight is steadier
           me.pitch = Math.min(CP.pitchMax, me.pitch + k.pitch * steady); me.yaw += k.yaw * steady;
@@ -1430,6 +1430,7 @@
     me.tacLeft = row[15] || 0; me.ultPct = row[16] || 0; me.tacCh = row[18];
     const fx = row[17] || 0;
     me.spdMul = (fx & 2 ? 1.35 : 1) * (fx & 8 ? 0.6 : 1);
+    me.rampage = !!(fx & 16);   // RIOT's RAMPAGE: no recoil
     const t = document.querySelector('#abil [data-a="tac"]'), u = document.querySelector('#abil [data-a="ult"]');
     t.querySelector('span').textContent = op.tac.name; u.querySelector('span').textContent = op.ult.name;
     t.querySelector('b').textContent = op.tac.charges ? `×${me.tacCh}${me.tacLeft > 0 ? ' · ' + me.tacLeft + 's' : ''}` : me.tacLeft > 0 ? me.tacLeft + 's' : 'READY';

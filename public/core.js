@@ -242,7 +242,7 @@ const ROUNDS_TO_WIN = 3;
 const OPS = {
   riot:   { name: 'RIOT', cls: 'ASSAULT', color: '#ff6a2a',
     tac: { name: 'CLUSTER', cd: 20, desc: 'Throw a frag and thermite in one: it blows up, then leaves a wall of fire' },
-    ult: { name: 'RAMPAGE', charge: 100, desc: '7 s: fire twice as fast, take 60% less damage, and never stop shooting' } },
+    ult: { name: 'RAMPAGE', charge: 100, desc: '7 s: fire twice as fast with no recoil, headshots do nothing, 60% less body damage, never stop shooting' } },
   volt:   { name: 'VOLT', cls: 'SKIRMISHER', color: '#ffd23f',
     tac: { name: 'BLINK', cd: 10, desc: 'Dash 5 m the way you are moving, straight through walls' },
     ult: { name: 'WARP', charge: 90, desc: 'Teleport to your warp point (hold Tab 4 s to set it, any time)' } },
@@ -1111,7 +1111,7 @@ function touchingEnemy(m, pr, pad) {
 // one place that applies damage and reports hits / knockouts (owner may be null)
 function damage(m, o, amount, owner, src, head, x, y, z) {
   if (!o.alive) return;
-  if (o.fx && o.fx.rampage > 0) amount = Math.round(amount * 0.4);   // RIOT's RAMPAGE: 60% less damage
+  if (o.fx && o.fx.rampage > 0) amount = head ? 0 : Math.round(amount * 0.4);   // RIOT's RAMPAGE: headshots do nothing, 60% less damage otherwise
   o.hp -= amount;
   if (owner && owner !== o && OPS[owner.op]) owner.ult = Math.min(OPS[owner.op].ult.charge * 60, owner.ult + amount * 6);   // 1 health of damage = 2 s of charge
   m.events.push(['h', o.id, Math.round(x), Math.round(y), Math.round(z), owner ? owner.id : 0, head ? 1 : 0, src]);
@@ -1656,7 +1656,7 @@ function stepMatch(m) {
       const ex = Math.round(ox + Math.cos(p.yaw) * d), ey = Math.round(oy + Math.sin(p.yaw) * d), ez = Math.round(bar ? bar.h : clamp(eye + d * Math.tan(p.pitch), 0, 200));
       m.events.push(['s', p.id, p.burst, ex, ey, ez, W.code]);
       if (bar && (!W.range || d <= W.range)) hitBarrier(m, bar.w, 1, ex, ey, ez);
-      if (p.bot) { const k = weaponKick(wn, p.burst); p.pitch = Math.min(P.pitchMax, p.pitch + k.pitch); p.yaw = wrapAngle(p.yaw + k.yaw); }
+      if (p.bot && !(p.fx.rampage > 0)) { const k = weaponKick(wn, p.burst); p.pitch = Math.min(P.pitchMax, p.pitch + k.pitch); p.yaw = wrapAngle(p.yaw + k.yaw); }
       p.burst++;
     }
     const hit = tgt && p.cool <= 0 && p.switchT <= 0 && (p.bot || p.onT > P.fireDelay || p.fx.rampage > 0) ? tgt : null;
@@ -1670,7 +1670,7 @@ function stepMatch(m) {
       m.events.push(['s', p.id, p.burst, ex, ey, ez, W.code]);
       damage(m, o, weaponDamage(wn, d, hit.head), p, wn === 'shotgun' ? DMG_SRC.shotgun : DMG_SRC.gun, hit.head, ex, ey, ez);
       // Players apply this same kick on their own computer when they get the 's' event
-      if (p.bot) { const k = weaponKick(wn, p.burst); p.pitch = Math.min(P.pitchMax, p.pitch + k.pitch); p.yaw = wrapAngle(p.yaw + k.yaw); }
+      if (p.bot && !(p.fx.rampage > 0)) { const k = weaponKick(wn, p.burst); p.pitch = Math.min(P.pitchMax, p.pitch + k.pitch); p.yaw = wrapAngle(p.yaw + k.yaw); }
       p.burst++;
     }
   }
