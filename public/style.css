@@ -361,3 +361,7 @@ table.board td.k { text-align: right; }
 #mark-ring { position: absolute; left: 50%; top: 50%; width: 120px; height: 120px; margin: -60px 0 0 -60px; border-radius: 50%; pointer-events: none;
   background: conic-gradient(#ffd23f var(--p, 0%), rgba(255, 210, 63, 0.15) 0); -webkit-mask: radial-gradient(circle, transparent 52px, #000 53px); mask: radial-gradient(circle, transparent 52px, #000 53px); }
 #mark-ring span { position: absolute; top: 128px; left: 50%; transform: translateX(-50%); white-space: nowrap; font-family: var(--font-display); color: #ffd23f; letter-spacing: 2px; font-size: 16px; text-shadow: 2px 2px 0 rgba(0,0,0,0.7); }
+
+#glass-bar { position: absolute; left: 50%; top: calc(50% + 46px); transform: translateX(-50%); width: 150px; text-align: center; pointer-events: none;
+  font-family: var(--font-display); font-size: 14px; letter-spacing: 2px; color: #bfe8ff; text-shadow: 1px 1px 0 rgba(0,0,0,0.7); }
+#glass-bar i { display: block; height: 5px; margin-top: 3px; background: linear-gradient(90deg, #bfe8ff var(--p, 0%), rgba(191, 232, 255, 0.18) 0); }
