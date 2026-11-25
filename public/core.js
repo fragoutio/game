@@ -188,7 +188,7 @@ const P = {
   // Players: the crosshair must stay on an enemy this many ticks (0.05 s) before the gun starts firing,
   // so someone walking past an angle you're holding doesn't get knocked out instantly. Once firing, it keeps firing.
   fireDelay: 3,
-  claimMax: 30,   // how far (px) a player's own position may differ from the server's and still be accepted
+  claimMax: 48,   // how far (px) a player's own position may differ from the server's and still be accepted
   // Aiming down the sight (ADS) only works while crouched (crouching already slows you, so no extra slowdown).
   // Leaning (only while aiming) moves your eye and gun leanPx to the side, so you can shoot around a corner
   // while staying mostly behind it.
@@ -1304,7 +1304,7 @@ function handlePlay(client, msg) {
       p.input = { f: c(msg.f), s: c(msg.s), yaw, pitch, run: !!msg.run, crouch: !!msg.crouch, ads, lean,
         weapon: WEAPONS[msg.weapon] ? msg.weapon : p.input.weapon || p.weapon };
       // where the player's own computer has them (it moves instantly); used if it's close to ours
-      if (Number.isFinite(+msg.x) && Number.isFinite(+msg.y)) p.claim = [+msg.x, +msg.y];
+      if (Number.isFinite(+msg.x) && Number.isFinite(+msg.y)) p.claim = [+msg.x, +msg.y, Number.isFinite(+msg.z) ? +msg.z : null];
       const rap = +msg.rap || 0;
       if (rap > (p.rapSeen || 0)) { p.rapSeen = rap; p.wantRap = true; }
       const tac = +msg.tac || 0, ult = +msg.ult || 0, mark = +msg.mark || 0;
@@ -1583,8 +1583,14 @@ function stepMatch(m) {
     // Trust the player's own position when it's within a few steps of ours and not inside a wall, so
     // peeking a corner counts the moment they see around it (instead of a moment later on the server).
     if (p.claim) {
-      const [cx, cy] = p.claim; p.claim = null;
-      if (m.phase !== 'countdown' && !p.rap && !p.onLadder && Math.hypot(cx - p.x, cy - p.y) < P.claimMax && !blockedAt(cx, cy, P.r, p.z || 0) && supportAt(cx, cy, p.z || 0) >= (p.z || 0) - 2) { p.x = cx; p.y = cy; }
+      // the player's computer says where they are (including how high: stairs, ledges, drops, ladders). Take it if it's
+      // close and a real place to be, so the server doesn't drift away and snap them back (that looked like teleporting).
+      const [cx, cy, czRaw] = p.claim; p.claim = null;
+      const z0 = p.z || 0, cz = czRaw == null ? z0 : czRaw;
+      if (m.phase !== 'countdown' && !p.rap && !(p.dashT > 0) && Math.hypot(cx - p.x, cy - p.y) < P.claimMax && Math.abs(cz - z0) <= 40 &&
+          !blockedAt(cx, cy, P.r - 1, cz) && !stairBlocks(cx, cy, cz) && supportAt(cx, cy, cz) <= cz + 14 && (cz <= UP.floor + 2)) {
+        p.x = cx; p.y = cy; if (Math.abs(cz - z0) > 0.5) { p.z = cz; p.vz = 0; }
+      }
     }
     if (m.phase === 'fight') for (const w of wants) throwGrenade(m, p, w);
     if (p.bot && p.op === 'haven' && p.ult >= OPS.haven.ult.charge * 60 && m.players.some(o => !o.alive && o.team === p.team) && Math.random() < 0.01) p.brain.useUlt = true;   // revive even out of a fight

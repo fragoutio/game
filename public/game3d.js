@@ -1136,7 +1136,7 @@
     const canMove = free || !!(curState && curState.phase !== 'countdown' && me.alive);
     const c = Math.cos(me.yaw), sn = Math.sin(me.yaw);
     const mx = c * mv.f - sn * mv.s, my = sn * mv.f + c * mv.s;
-    me.acc = Math.min(me.acc + dt * 60, 4);
+    me.acc = Math.min(me.acc + dt * 60, 12);   // a slow frame catches up (up to 0.2 s) instead of falling behind the server
     while (me.acc >= 1) { me.acc -= 1; Core.stepMovement(me, mx, my, mv.run, mv.crouch, mv.f > 0.3, canMove, me.ads); }
     if (me.stance !== 'crouch' || !me.alive) lowerSight();   // stand up (or slide, run, get knocked out) and you zoom back out
     return canMove && (Math.hypot(mx, my) > 0 || me.stance === 'slide');
@@ -1145,7 +1145,7 @@
   function sendInput(now) {
     if (now - lastInput < 33) return;
     lastInput = now;
-    sendPlay({ t: 'input', weapon: me.weapon || 'rifle', f: lastMove.f, s: lastMove.s, run: lastMove.run, crouch: lastMove.crouch, ads: !!me.ads, lean: me.lean || 0, rap: me.rapN || 0, drop: me.dropN || 0, tac: me.tacN || 0, ult: me.ultN || 0, mark: me.markN || 0, x: Math.round(me.x * 10) / 10, y: Math.round(me.y * 10) / 10, yaw: Math.round(me.yaw * 1000) / 1000, pitch: Math.round(me.pitch * 1000) / 1000 });
+    sendPlay({ t: 'input', weapon: me.weapon || 'rifle', f: lastMove.f, s: lastMove.s, run: lastMove.run, crouch: lastMove.crouch, ads: !!me.ads, lean: me.lean || 0, rap: me.rapN || 0, drop: me.dropN || 0, tac: me.tacN || 0, ult: me.ultN || 0, mark: me.markN || 0, x: Math.round(me.x * 10) / 10, y: Math.round(me.y * 10) / 10, z: Math.round((me.z || 0) * 10) / 10, yaw: Math.round(me.yaw * 1000) / 1000, pitch: Math.round(me.pitch * 1000) / 1000 });
   }
 
   // what's under the centre crosshair? Same test as the server (core.castRay): body height depends on
@@ -1761,8 +1761,8 @@
       if (p[0] === match.you) {
         // keep the prediction honest: ease toward the server when idle, snap if far off
         const err = Math.hypot(act.sx - me.x, act.sy - me.y);
-        if (err > 36 || !me.alive) { me.x = act.sx; me.y = act.sy; me.z = act.sz; me.vz = 0; }
-        else if (!moving) { me.x += (act.sx - me.x) * 0.15; me.y += (act.sy - me.y) * 0.15; }
+        if (err > (moving ? 96 : 48) || !me.alive) { me.x = act.sx; me.y = act.sy; me.z = act.sz; me.vz = 0; }
+        else if (!moving && err > 1) { me.x += (act.sx - me.x) * 0.1; me.y += (act.sy - me.y) * 0.1; }
         act.label.style.display = 'none';
         if (me.dashAnim) {   // see yourself zip ahead while the camera catches up
           act.ch.root.visible = true; act.ch.root.position.set(me.x * S, (me.z || 0) * S, me.y * S);
@@ -1794,7 +1794,14 @@
       const seen = act.info.team === match.myTeam || !me.alive || revealed || Core.lineOfSight(me.x, me.y, act.sx, act.sy, (me.z || 0) + 33, act.sz + 33);
       // speed: don't draw players you can't see (behind walls); check their head and their legs
       const ez = (me.z || 0) + 33, near = Math.hypot(act.sx - me.x, act.sy - me.y) < 60;
-      act.ch.root.visible = !firstPerson || revealed || near || Core.lineOfSight(me.x, me.y, act.sx, act.sy, ez, act.sz + 40) || Core.lineOfSight(me.x, me.y, act.sx, act.sy, ez, act.sz + 10);
+      let inView = !firstPerson || revealed || near;
+      if (!inView) {   // their head, legs and both shoulders, from where your camera is (leaning too)
+        const cx = camera.position.x / S, cy = camera.position.z / S, cz = camera.position.y / S, ox = -(act.sy - cy), oy = act.sx - cx, ol = Math.hypot(ox, oy) || 1;
+        for (const [px, py, pz] of [[0, 0, 40], [0, 0, 10], [ox / ol * 11, oy / ol * 11, 28], [-ox / ol * 11, -oy / ol * 11, 28]])
+          if (Core.lineOfSight(cx, cy, act.sx + px, act.sy + py, cz, act.sz + pz)) { inView = true; break; }
+      }
+      if (inView) act.seenAt = now;
+      act.ch.root.visible = inView || now - (act.seenAt || 0) < 400;   // no flicker: stay drawn for a moment after
       const vis = p[4] && proj.z < 1 && seen;
       act.label.style.display = vis ? '' : 'none';
       if (vis) {
