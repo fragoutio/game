@@ -166,8 +166,8 @@
     const RH = UPS.rail * S, POST = 0.07;
     const handrail = (id, x1, z1, x2, z2, base) => {   // from (x1, z1) to (x2, z2) in world units, standing on height base
       const len = Math.hypot(x2 - x1, z2 - z1), along = Math.abs(x2 - x1) > Math.abs(z2 - z1), cx = (x1 + x2) / 2, cz = (z1 + z2) / 2;
-      for (const [hy, th] of [[RH, 0.06], [RH * 0.5, 0.035]]) railParts.push([id, along ? len : th, th, along ? th : len, cx, base + hy, cz, true]);
-      const n = Math.max(1, Math.round(len / 0.7));
+      railParts.push([id, along ? len : 0.06, 0.06, along ? 0.06 : len, cx, base + RH, cz, true]);   // one top rail
+      const n = Math.max(1, Math.round(len / 2.2));   // a few posts
       for (let k = 0; k <= n; k++) { const t = k / n; railParts.push([id, POST, RH, POST, x1 + (x2 - x1) * t, base + RH / 2, z1 + (z2 - z1) * t, true]); }
     };
     UPS.rails.forEach(([rx, ry, rw, rh], id) => {
@@ -181,7 +181,8 @@
         const top = Math.min(1, (k + 1) / n / 0.8) * FZ, zc = (dir === 'S' ? sy + (k + 0.5) * step : sy + sh - (k + 0.5) * step) * S;
         [sx, sx + sw].forEach((xx, e) => {
           const id = UPS.rails.length + si * 2 + e;
-          railParts.push([id, POST, RH, POST, xx * S, top + RH / 2, zc, true], [id, 0.06, 0.06, step * S + 0.02, xx * S, top + RH, zc, true], [id, 0.035, 0.035, step * S + 0.02, xx * S, top + RH * 0.5, zc, true]);
+          railParts.push([id, 0.06, 0.06, step * S + 0.02, xx * S, top + RH, zc, true]);
+          if (k % 3 === 0) railParts.push([id, POST, RH, POST, xx * S, top + RH / 2, zc, true]);
         });
       }
     });
