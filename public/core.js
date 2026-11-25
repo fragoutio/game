@@ -96,7 +96,7 @@ const UP = MAP.upper;
     }
   };
   const ladderGaps = (horiz, at) => UP.ladders.filter(l => horiz ? Math.abs(l[1] - at) < 2 || Math.abs(l[1] + l[3] - at) < 2 : Math.abs(l[0] - at) < 2 || Math.abs(l[0] + l[2] - at) < 2)
-    .map(l => (horiz ? [l[0] - 10, l[0] + l[2] + 10] : [l[1] - 10, l[1] + l[3] + 10]));
+    .map(l => (horiz ? [l[0] - 16, l[0] + l[2] + 16] : [l[1] - 16, l[1] + l[3] + 16]));
   for (const [x, y, w, h] of UP.holes) {
     edge(x, y, x + w, y, ladderGaps(true, y)); edge(x, y + h, x + w, y + h, ladderGaps(true, y + h));
     edge(x, y, x, y + h, ladderGaps(false, x)); edge(x + w, y, x + w, y + h, ladderGaps(false, x + w));
@@ -644,6 +644,11 @@ function stepMovement(p, mx, my, run, crouch, runOk, canMove, ads = false) {
   p.onLadder = false;
   if (lad) {
     const z = p.z || 0, sup = supportAt(p.x, p.y, z), dot = len ? (mx * lad[0] + my * lad[1]) / len : 0;
+    if (z > sup + 0.5 && len && Math.abs(dot) < 0.3) {   // on the ladder, moving sideways (A / D): let go and drop
+      p.dropT = 30; p.onLadder = false;
+      for (const d of [14, 8, 4]) { const nx = p.x + mx / len * d, ny = p.y + my / len * d; if (!blockedAt(nx, ny, P.r, z) && !stairBlocks(nx, ny, z)) { p.x = nx; p.y = ny; break; } }
+      settle(p); return;
+    }
     if (z > sup + 0.5) {   // on the ladder
       p.stance = 'stand'; p.running = false; p.onLadder = true; p.vz = 0;
       if (dot > 0.3) p.z = Math.min(UP.floor, z + P.climb);
@@ -664,7 +669,7 @@ function stepMovement(p, mx, my, run, crouch, runOk, canMove, ads = false) {
   const ox = p.x, oy = p.y, z = p.z || 0;
   const onRamp = rampAt(p.x, p.y) >= 0 && z > 6;   // up on a staircase: its side has a rail, so no walking off it
   const ok = (x, y) => !blockedAt(x, y, P.r, z) && supportAt(x, y, z) <= z + 14 && !stairBlocks(x, y, z) &&
-    !(onRamp && rampAt(x, y) < 0 && supportAt(x, y, z) < z - 2 && sideRailOn(p.x, p.y, x));   // no wall, no step too high, not into a staircase
+    !(onRamp && rampAt(x, y) < 0 && supportAt(x, y, z) < z - 14 && sideRailOn(p.x, p.y, x));   // a step down off the side is fine   // no wall, no step too high, not into a staircase
   if (ok(p.x + dx * spd, p.y)) p.x += dx * spd;
   if (ok(p.x, p.y + dy * spd)) p.y += dy * spd;
   if (p.stance === 'slide' && p.x === ox && p.y === oy) p.slideT = Math.min(p.slideT, 1);   // slid into a wall
@@ -1453,6 +1458,7 @@ function useTac(m, p, mx, my) {
   const op = OPS[p.op];
   if (!op || !p.alive) return;
   if (p.vault) return;
+  if (p.onLadder) { p.wantDrop = true; return; }   // Space on a ladder: let go
   { const rs = railSpot(p); if (rs) { startMantle(p, rs); m.events.push(['mt', p.id]); return; } }   // vault over a handrail
   if (p.op === 'warden') { const sp = mantleSpot(p, p.team); if (sp) { startMantle(p, sp); m.events.push(['mt', p.id]); return; } }   // vault over your barrier (no charge used)
   if (op.tac.charges) { if (!(p.tacCh > 0)) return; p.tacCh--; if (p.tac <= 0) p.tac = op.tac.cd * 60; }

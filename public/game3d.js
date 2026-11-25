@@ -1370,6 +1370,7 @@
   // ---------- Operator abilities: Space tactical, Tab ultimate ----------
   function useTactical() {
     const op = Core.OPS[me.op]; if (!op || !me.alive) return;
+    if (me.onLadder) { me.tacN = (me.tacN || 0) + 1; me.wantDrop = true; return; }   // Space on a ladder: let go
     { const rs = Core.railSpot(me); if (rs) { me.tacN = (me.tacN || 0) + 1; Core.startMantle(me, rs); sfx.swap(); return; } }   // vault over a handrail
     if (me.op === 'warden' && match) { const sp = Core.mantleSpot(me, match.myTeam); if (sp) { me.tacN = (me.tacN || 0) + 1; Core.startMantle(me, sp); sfx.swap(); return; } }   // vault over your barrier
     if (op.tac.charges ? !(me.tacCh > 0) : me.tacLeft > 0) { sfx.denied(); toast(`${op.tac.name} ready in ${me.tacLeft} s`); return; }
@@ -1804,7 +1805,7 @@
     const tip = $('move-tip');
     if (me.alive && (ui === 'game' || ui === 'practice')) {
       const lad = Core.ladderAt(me.x, me.y);
-      tip.textContent = Core.railSpot(me) ? 'SPACE  VAULT OVER' : me.op === 'warden' && Core.mantleSpot(me, match.myTeam) ? 'SPACE  MANTLE OVER' : me.rap ? 'RAPPELLING · X LET GO' : Core.rappelSpot(me) ? 'X  RAPPEL DOWN' : lad ? (me.onLadder ? 'W / S  CLIMB · CAPS LOCK  LET GO' : 'W  CLIMB LADDER') : '';
+      tip.textContent = Core.railSpot(me) ? 'SPACE  VAULT OVER' : me.op === 'warden' && Core.mantleSpot(me, match.myTeam) ? 'SPACE  MANTLE OVER' : me.rap ? 'RAPPELLING · X LET GO' : Core.rappelSpot(me) ? 'X  RAPPEL DOWN' : lad ? (me.onLadder ? 'W / S  CLIMB · A / D OR SPACE  LET GO' : 'W  CLIMB LADDER') : '';
       tip.hidden = !tip.textContent;
     } else tip.hidden = true;
 
