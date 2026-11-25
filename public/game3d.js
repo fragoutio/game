@@ -1375,6 +1375,7 @@
     if (me.op === 'warden' && match) { const sp = Core.mantleSpot(me, match.myTeam); if (sp) { me.tacN = (me.tacN || 0) + 1; Core.startMantle(me, sp); sfx.swap(); return; } }   // vault over your barrier
     if (op.tac.charges ? !(me.tacCh > 0) : me.tacLeft > 0) { sfx.denied(); toast(`${op.tac.name} ready in ${me.tacLeft} s`); return; }
     me.tacN = (me.tacN || 0) + 1;
+    if (me.op === 'warden' && match && !Core.barrierCanPlace(me, match.you)) { me.tacN--; sfx.denied(); toast('No room: barriers can go side by side, not on top of each other'); return; }
     if (op.tac.charges) me.tacCh--;
     if (me.op === 'volt') {   // blink right away on this computer too (the server does the same)
       const c = Math.cos(me.yaw), sn = Math.sin(me.yaw), fx = me.x, fy = me.y;

@@ -1456,6 +1456,28 @@ function railSpot(p) {
   return null;
 }
 function startMantle(p, spot) { p.dashT = 14; p.dashTo = spot; p.vaultZ = p.z || 0; p.vault = 14; p.rap = null; p.stance = 'stand'; }
+// WARDEN barrier placement: a wall across your view, a step ahead of you
+function barrierSeg(p) {
+  const fx = Math.cos(p.yaw || 0), fy = Math.sin(p.yaw || 0), cx = p.x + fx * 40, cy = p.y + fy * 40, h = 34;
+  return { x1: cx + fy * h, y1: cy - fx * h, x2: cx - fy * h, y2: cy + fx * h, z: p.z || 0 };
+}
+// Barriers can sit side by side (touching ends) but not on top of or through each other. walls: the current
+// barriers; skip: one that will be removed to make room (your oldest when you already have 3).
+function barrierFits(seg, walls, skip = null) {
+  for (const w of walls || []) {
+    if (w === skip || Math.abs(w.z - seg.z) > 30) continue;
+    let close = 0;
+    for (let k = 0; k <= 8; k++) { const t = k / 8; if (segDist(seg.x1 + (seg.x2 - seg.x1) * t, seg.y1 + (seg.y2 - seg.y1) * t, w) < 10) close++; }
+    const cross = segCross(seg.x1, seg.y1, seg.x2, seg.y2, w);
+    if (close >= 3 || (cross > 0.1 && cross < 0.9)) return false;
+  }
+  return true;
+}
+// can this player put a barrier down right now (ownerId: whose barriers count as theirs)?
+function barrierCanPlace(p, ownerId) {
+  const mine = (curWalls || []).filter(w => w.owner === ownerId);
+  return barrierFits(barrierSeg(p), curWalls, mine.length >= 3 ? mine[0] : null);
+}
 function useTac(m, p, mx, my) {
   const op = OPS[p.op];
   if (!op || !p.alive) return;
@@ -1463,6 +1485,7 @@ function useTac(m, p, mx, my) {
   if (p.onLadder) { p.wantDrop = true; return; }   // Space on a ladder: let go
   { const rs = railSpot(p); if (rs) { startMantle(p, rs); m.events.push(['mt', p.id]); return; } }   // vault over a handrail
   if (p.op === 'warden') { const sp = mantleSpot(p, p.team); if (sp) { startMantle(p, sp); m.events.push(['mt', p.id]); return; } }   // vault over your barrier (no charge used)
+  if (p.op === 'warden' && p.tacCh > 0 && !barrierCanPlace(p, p.id)) { m.events.push(['nofit', p.id]); return; }   // no stacking barriers
   if (op.tac.charges) { if (!(p.tacCh > 0)) return; p.tacCh--; if (p.tac <= 0) p.tac = op.tac.cd * 60; }
   else { if (p.tac > 0) return; p.tac = op.tac.cd * 60; }
   const enemies = m.players.filter(o => o.alive && o.team !== p.team);
@@ -1472,10 +1495,9 @@ function useTac(m, p, mx, my) {
   else if (p.op === 'haven') {
     for (const o of m.players) if (o.alive && o.team === p.team && Math.hypot(o.x - p.x, o.y - p.y) < 120) { o.hp = Math.min(P.hp, o.hp + 40); m.events.push(['hl', o.id]); }
   } else if (p.op === 'warden') {   // barrier: a wall across your view, a step ahead (your oldest goes if you already have 3)
-    const fx = Math.cos(p.yaw), fy = Math.sin(p.yaw), d = 40, cx = p.x + fx * d, cy = p.y + fy * d, h = 34;
     const mine = m.walls2.filter(w => w.owner === p.id);
     if (mine.length >= 3) m.walls2.splice(m.walls2.indexOf(mine[0]), 1);
-    m.walls2.push({ id: m.nextProj++, x1: cx + fy * h, y1: cy - fx * h, x2: cx - fy * h, y2: cy + fx * h, z: p.z || 0, hp: 9, team: p.team, owner: p.id });
+    m.walls2.push(Object.assign(barrierSeg(p), { id: m.nextProj++, hp: 9, team: p.team, owner: p.id }));
   }
   m.events.push(['ab', p.id, 0, p.op]);
 }
@@ -1760,5 +1782,5 @@ function start(opts = {}) {
 
 // identifies the map, so a client only plays on a server with the same one
 const MAP_ID = MAP.w + 'x' + MAP.h + '-' + MAP.walls.length + '-' + UP.ladders.length;
-return { TRAP_R, setRailBroken, railSpot, mantleSpot, startMantle, OPS, OP_LIST, setZones, setWalls, setLosTeam, BARRIER_H, startDash, MAP_ID, slabRects, onSlab, ladderAt, rappelSpot, connect, start, tick, matchmake, createPractice, MAP, P, LOOK_SIZES, STANCES, KINDS, recoilKick, blocked, lineOfSight, stepMovement, castRay, predictThrow, segmentClear, eyePos, setBroken, panelUnder, EXTRACT, MODES, clear3, supportAt, blockedAt, _matches: matches, WEAPONS, WEAPON_BY_CODE, weaponDamage, weaponKick, get botFillMs() { return BOT_FILL_MS; } };
+return { barrierCanPlace, TRAP_R, setRailBroken, railSpot, mantleSpot, startMantle, OPS, OP_LIST, setZones, setWalls, setLosTeam, BARRIER_H, startDash, MAP_ID, slabRects, onSlab, ladderAt, rappelSpot, connect, start, tick, matchmake, createPractice, MAP, P, LOOK_SIZES, STANCES, KINDS, recoilKick, blocked, lineOfSight, stepMovement, castRay, predictThrow, segmentClear, eyePos, setBroken, panelUnder, EXTRACT, MODES, clear3, supportAt, blockedAt, _matches: matches, WEAPONS, WEAPON_BY_CODE, weaponDamage, weaponKick, get botFillMs() { return BOT_FILL_MS; } };
 });
