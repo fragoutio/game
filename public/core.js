@@ -298,7 +298,7 @@ const rectHitsCircle = ([x, y, w, h], cx, cy, r) => {
 // Panels that have been broken in the match being simulated (or shown) right now. stepMatch sets it for the
 // match it's stepping; the client sets it to what it was last told (setBroken).
 let curBroken = null;
-let curRailBroken = null;   // glass rails shattered this round (ids, see UP.sideRails)
+let curRailBroken = null;   // handrails taken out this round (ids, see UP.sideRails); none are, for now
 const railOn = i => !curRailBroken || !curRailBroken.has(i);
 function setRailBroken(set) { curRailBroken = set; }
 const wallOn = i => !curBroken || !curBroken.has(i);
@@ -547,7 +547,7 @@ function startMatch(mode, clients) {
 function resetRound(m) {
   m.round++; m.projectiles = []; m.fires = []; m.phase = 'countdown'; m.phaseT = 180; // 3 s: "3, 2, 1, FIGHT"
   m.broken = new Set(); m.panelHp = new Map(); m.roundReason = null;   // panels are rebuilt every round
-  m.railBroken = new Set();   // and the glass
+  m.railBroken = new Set();
   m.zones = []; m.strikes = []; m.walls2 = []; m.traps = [];
   for (const p of m.players) { p.fx = {}; p.tac = 0; p.dashT = 0; p.tacCh = OPS[p.op] && OPS[p.op].tac.charges || 0; }
   if (m.mode === 'extraction') {
@@ -1421,37 +1421,11 @@ function mantleSpot(p, team) {
   }
   return null;
 }
-// is the glass on the side of the staircase at (px, py) that you'd cross going to x still there?
+// is the handrail on the side of the staircase at (px, py) that you would cross going to x still there?
 function sideRailOn(px, py, x) {
   const si = UP.stairs.findIndex(s => inRect(s, px, py));
   if (si < 0) return true;
   return railOn(UP.rails.length + si * 2 + (x > UP.stairs[si][0] + UP.stairs[si][2] / 2 ? 1 : 0));
-}
-// The glass pane your crosshair is on (within 1200 px, nothing solid in front): { id, x, y, z } or null
-function glassUnder(p) {
-  const [ex, ey] = eyePos(p.x, p.y, p.yaw, p.lean || 0), eye = (p.z || 0) + STANCES[p.stance].eye;
-  const dx = Math.cos(p.yaw), dy = Math.sin(p.yaw), tp = Math.tan(p.pitch), maxD = 1200;
-  let best = null;
-  UP.rails.forEach((rl, i) => {
-    if (!railOn(i)) return;
-    let t0 = 0, t1 = maxD;
-    for (const [pp, q] of [[-dx, ex - rl[0]], [dx, rl[0] + rl[2] - ex], [-dy, ey - rl[1]], [dy, rl[1] + rl[3] - ey]]) {
-      if (pp === 0) { if (q < 0) return; } else { const r = q / pp; if (pp < 0) { if (r > t1) return; if (r > t0) t0 = r; } else { if (r < t0) return; if (r < t1) t1 = r; } }
-    }
-    const t = (t0 + t1) / 2, z = eye + t * tp;
-    if (t0 <= t1 && z >= UP.floor && z <= UP.floor + UP.rail && (!best || t < best.t)) best = { id: i, t, z };
-  });
-  for (const sr of UP.sideRails) {
-    if (!railOn(sr.id) || !dx) continue;
-    const t = (sr.x - ex) / dx; if (t <= 0 || t > maxD || (best && t >= best.t)) continue;
-    const y = ey + dy * t, z = eye + t * tp;
-    if (y < sr.y0 || y > sr.y1) continue;
-    const st = UP.stairs[sr.si], rh = rampAt(st[0] + st[2] / 2, y);
-    if (z >= rh && z <= rh + UP.rail) best = { id: sr.id, t, z };
-  }
-  if (!best) return null;
-  const x = ex + dx * best.t, y = ey + dy * best.t;
-  return clear3(ex, ey, eye, ex + dx * (best.t - 3), ey + dy * (best.t - 3), best.z) ? { id: best.id, x, y, z: best.z } : null;
 }
 // Facing a handrail up close (upstairs), or the side of a staircase you're standing on: Space vaults over it
 // (you drop down the other side). Returns the landing spot, or null.
@@ -1626,11 +1600,6 @@ function stepMatch(m) {
     const rampage = p.fx.rampage > 0 && m.phase === 'fight' && !p.running && !p.bot ? true : p.fx.rampage > 0 && p.bot && p.brain.seen > 0;
     p.onT = tgt || pan || bar || rampage ? (p.onT || 0) + 1 : 0;                // how long the crosshair has been on someone
     if (p.switchT > 0) p.switchT--;
-    if (!p.bot && m.phase === 'fight') {   // keep your crosshair on a glass rail for 0.75 s and it shatters
-      const gl = glassUnder(p);
-      if (gl && gl.id === p.glassId) p.glassT = (p.glassT || 0) + 1; else { p.glassId = gl ? gl.id : -1; p.glassT = gl ? 1 : 0; }
-      if (gl && p.glassT >= 45) { m.railBroken.add(gl.id); m.events.push(['gb', gl.id, Math.round(gl.x), Math.round(gl.y), Math.round(gl.z)]); p.glassT = 0; p.glassId = -1; }
-    } else p.glassT = 0;
     if (pan && p.cool <= 0 && p.switchT <= 0 && p.onT > P.fireDelay) {
       const wn = p.weapon || 'rifle', W = WEAPONS[wn];
       p.cool = W.cooldown * (p.fx.over > 0 ? 0.62 : 1) * (p.fx.rampage > 0 ? 0.5 : 1); p.sinceShot = 0;
@@ -1684,13 +1653,13 @@ function stepMatch(m) {
     const g = m.gem;
     const state = { t: 'state', tick: m.tick, phase: m.phase, phaseT: m.phaseT, round: m.round, score: m.score, roundWinner: m.roundWinner,
       roundReason: m.roundReason || null,
-      broken: m.broken ? [...m.broken] : [], glass: m.railBroken ? [...m.railBroken] : [], panels: m.panelHp ? [...m.panelHp].filter(([i]) => !m.broken.has(i)) : [],
+      broken: m.broken ? [...m.broken] : [], panels: m.panelHp ? [...m.panelHp].filter(([i]) => !m.broken.has(i)) : [],
       ex: g ? { attack: m.attack, gem: [{ home: 0, carried: 1, dropped: 2 }[g.state], Math.round(g.x), Math.round(g.y), g.carrier, Math.round(g.prog / EXTRACT.extractTicks * 100)],
         time: Math.max(0, Math.ceil(m.timeLeft / 60)), cards: (m.cards || []).map(c => [c.id, r1(c.x), r1(c.y), r1(c.z), c.carrier]) } : null,
       players: m.players.map(p => [p.id, r1(p.x), r1(p.y), p.hp, p.alive ? 1 : 0, r3(p.yaw), r3(p.pitch), p.kills,
         STANCE_CODE[p.stance] + (p.running ? 4 : 0) + (p.ads ? 8 : 0) + (p.lean < 0 ? 16 : p.lean > 0 ? 32 : 0) + (p.rap ? 64 : 0) + (p.onLadder ? 128 : 0), Math.ceil(p.cd.boom / 6), Math.ceil(p.cd.frag / 6), Math.ceil(p.cd.therm / 6), WEAPONS[p.weapon || 'rifle'].code + (p.switchT > 0 ? 2 : 0), r1(p.z || 0), p.alive ? 0 : Math.ceil((p.respawnT || 0) / 60), Math.ceil((p.tac || 0) / 60),
         OPS[p.op] ? Math.floor(p.ult / (OPS[p.op].ult.charge * 60) * 100) : 0,
-        (p.fx.over > 0 ? 1 : 0) + (p.fx.rush > 0 ? 2 : 0) + (p.fx.reveal > 0 ? 4 : 0) + (p.fx.slow > 0 ? 8 : 0) + (p.fx.rampage > 0 ? 16 : 0), OPS[p.op] && OPS[p.op].tac.charges ? p.tacCh : -1, Math.round((p.glassT || 0) / 0.45)]),
+        (p.fx.over > 0 ? 1 : 0) + (p.fx.rush > 0 ? 2 : 0) + (p.fx.reveal > 0 ? 4 : 0) + (p.fx.slow > 0 ? 8 : 0) + (p.fx.rampage > 0 ? 16 : 0), OPS[p.op] && OPS[p.op].tac.charges ? p.tacCh : -1]),
       walls: (m.walls2 || []).map(w => [w.id, r1(w.x1), r1(w.y1), r1(w.x2), r1(w.y2), r1(w.z), w.hp, w.team]),
       traps: (m.traps || []).map(t => [t.id, r1(t.x), r1(t.y), r1(t.z), t.ceil ? 1 : 0, t.team]),
       zones: (m.zones || []).map(z => [z.k, r1(z.x), r1(z.y), z.r, Math.ceil(z.t / 60), z.team]),

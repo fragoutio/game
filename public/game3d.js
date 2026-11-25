@@ -162,20 +162,26 @@
       const under = new THREE.Mesh(new THREE.BoxGeometry(sw * S, 0.02, sh * S), lam(0x2a2c31));
       under.position.set(slab.position.x, FZ - 0.19, slab.position.z); g.add(under);
     }
-    railParts.length = 0;   // [id, w, h, d, x, y, z, isBar] for every glass pane and its top bar
-    const RH = UPS.rail * S;
+    railParts.length = 0;   // [id, w, h, d, x, y, z, isBar]: metal handrails (posts with gaps, a top rail and a middle rail)
+    const RH = UPS.rail * S, POST = 0.07;
+    const handrail = (id, x1, z1, x2, z2, base) => {   // from (x1, z1) to (x2, z2) in world units, standing on height base
+      const len = Math.hypot(x2 - x1, z2 - z1), along = Math.abs(x2 - x1) > Math.abs(z2 - z1), cx = (x1 + x2) / 2, cz = (z1 + z2) / 2;
+      for (const [hy, th] of [[RH, 0.06], [RH * 0.5, 0.035]]) railParts.push([id, along ? len : th, th, along ? th : len, cx, base + hy, cz, true]);
+      const n = Math.max(1, Math.round(len / 0.7));
+      for (let k = 0; k <= n; k++) { const t = k / n; railParts.push([id, POST, RH, POST, x1 + (x2 - x1) * t, base + RH / 2, z1 + (z2 - z1) * t, true]); }
+    };
     UPS.rails.forEach(([rx, ry, rw, rh], id) => {
-      const cx = (rx + rw / 2) * S, cz = (ry + rh / 2) * S;
-      railParts.push([id, rw * S, RH, rh * S, cx, FZ + RH / 2, cz, false], [id, rw * S + 0.02, 0.05, rh * S + 0.02, cx, FZ + RH, cz, true]);
+      if (rw >= rh) handrail(id, rx * S, (ry + rh / 2) * S, (rx + rw) * S, (ry + rh / 2) * S, FZ);
+      else handrail(id, (rx + rw / 2) * S, ry * S, (rx + rw / 2) * S, (ry + rh) * S, FZ);
     });
-    // the sides of each staircase: glass panes stepping up with the stairs (the flat top is left open to step off)
+    // the sides of each staircase: a handrail stepping up with the stairs (the flat top is left open to step off)
     UPS.stairs.forEach(([sx, sy, sw, sh, dir], si) => {
       const n = 10, step = sh / n;
       for (let k = 0; k < 8; k++) {
         const top = Math.min(1, (k + 1) / n / 0.8) * FZ, zc = (dir === 'S' ? sy + (k + 0.5) * step : sy + sh - (k + 0.5) * step) * S;
         [sx, sx + sw].forEach((xx, e) => {
           const id = UPS.rails.length + si * 2 + e;
-          railParts.push([id, 0.06, RH, step * S, xx * S, top + RH / 2, zc, false], [id, 0.08, 0.05, step * S + 0.02, xx * S, top + RH, zc, true]);
+          railParts.push([id, POST, RH, POST, xx * S, top + RH / 2, zc, true], [id, 0.06, 0.06, step * S + 0.02, xx * S, top + RH, zc, true], [id, 0.035, 0.035, step * S + 0.02, xx * S, top + RH * 0.5, zc, true]);
         });
       }
     });
@@ -241,7 +247,7 @@
     mergeStatic(g, new Set([...panelMeshes.values()].map(p => p.mesh)));
     scene.add(g);
   }
-  // glass rails: one mesh for the glass, one for the metal bars, rebuilt without the panes that are broken
+  // handrails: drawn as one merged mesh (rebuilt only if the set of rails changes)
   const railParts = [], railGlassMat = basic(0x9fd8ff, { transparent: true, opacity: 0.22, depthWrite: false }), railBarMat = lam(0x9aa0a8);
   let railMeshes = [], railBrokenKey = '';
   function rebuildRails(broken) {
@@ -866,7 +872,7 @@
     actors.clear(); match = null; prevState = curState = null; matchOver = false;
     vmScene.remove(vm.group); $('feed').innerHTML = '';
     clearGrenadeFx();
-    resetPanels(); clearCards(); updateZones([]); updateBarriers([], []); Core.setRailBroken(null); rebuildRails(new Set()); $('glass-bar').hidden = true; gemMesh.visible = false; $('gem-marker').hidden = true; $('ex-hud').hidden = true; $('carry-banner').hidden = true;
+    resetPanels(); clearCards(); updateZones([]); updateBarriers([], []); gemMesh.visible = false; $('gem-marker').hidden = true; $('ex-hud').hidden = true; $('carry-banner').hidden = true;
   }
   function clearMatchIfOver() { if (matchOver) clearMatch(); }
 
@@ -967,9 +973,6 @@
     updateAbilityHud(row);
     updateZones(msg.zones);
     updateBarriers(msg.walls, msg.traps);
-    const gset = new Set(msg.glass || []); Core.setRailBroken(gset); rebuildRails(gset);
-    const gp = row ? row[19] || 0 : 0, gbar = $('glass-bar');
-    gbar.hidden = !(gp > 0 && me.alive); if (gp > 0) gbar.style.setProperty('--p', gp + '%');
     // new round: snap your view and position back to your spawn
     if (row && msg.round !== lastRound) {
       lastRound = msg.round;
@@ -1011,7 +1014,6 @@
         if (ev[3] === 'volt' && ev[2] === 0 && a) burst(a.x, 1, a.z, 0xffd23f, 12, 3);
         continue;
       }
-      if (ev[0] === 'gb') { burst(ev[2] * S, ev[4] * S + 0.4, ev[3] * S, 0xbfe8ff, 30, 4); sfx.boom(); continue; }
       if (ev[0] === 'wh') { burst(ev[2] * S, ev[4] * S, ev[3] * S, 0x9fd8ff, 6, 2); continue; }
       if (ev[0] === 'wb') { const b = barrierMeshes.get(ev[1]); if (b) burst(b.position.x, 1.2, b.position.z, 0x9fd8ff, 26, 4); sfx.boom(); continue; }
       if (ev[0] === 'tr') { burst(ev[1] * S, ev[3] * S + 0.5, ev[2] * S, 0xc0c4cc, 24, 4); if (ev[4] === match.you) { announce('SPIKE TRAP', 'you lost 80% of your health', 'var(--team-b)', 1000); } sfx.hurt(); continue; }
