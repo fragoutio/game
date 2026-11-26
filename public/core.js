@@ -248,7 +248,7 @@ const OPS = {
     ult: { name: 'WARP', charge: 90, desc: 'Teleport to your warp point (hold Tab 4 s to set it, any time)' } },
   echo:   { name: 'ECHO', cls: 'RECON', color: '#3fe0ff',
     tac: { name: 'PULSE', cd: 20, desc: 'Highlight enemies within 20 m for 7 s, even through walls' },
-    ult: { name: 'SWEEP', charge: 110, desc: 'Highlight every enemy for 15 s, even through walls' } },
+    ult: { name: 'SWEEP', charge: 110, desc: 'Highlight every enemy for 15 s, even through walls, and turn invisible for the first 5 s (no name tag)' } },
   haven:  { name: 'HAVEN', cls: 'SUPPORT', color: '#5dffb4',
     tac: { name: 'PATCH', cd: 22, desc: 'Heal you and nearby teammates 2 health' },
     ult: { name: 'REBOOT', charge: 120, desc: 'Bring every knocked-out teammate back, right next to you' } },
@@ -308,7 +308,7 @@ function setBroken(set) { curBroken = set; }
 function blockedAt(x, y, r, z, noRails = false) {
   for (let i = 0; i < MAP.walls.length; i++) if (wallOn(i) && z < wallTop(i) && z + 30 > wallBot(i) && rectHitsCircle(MAP.walls[i], x, y, r)) return true;
   if (curWalls) for (const w of curWalls) if (z < w.z + BARRIER_H && z + 30 > w.z && segDist(x, y, w) < r + 4) return true;
-  if (!noRails && z >= UP.floor - 4) for (let i = 0; i < UP.rails.length; i++) if (railOn(i) && rectHitsCircle(UP.rails[i], x, y, r)) return true;
+  if (!noRails && z >= UP.floor - 14 && rampAt(x, y) < 0) for (let i = 0; i < UP.rails.length; i++) if (railOn(i) && rectHitsCircle(UP.rails[i], x, y, r)) return true;
   return false;
 }
 const blocked = (x, y, r) => blockedAt(x, y, r, 0);
@@ -666,6 +666,7 @@ function stepMovement(p, mx, my, run, crouch, runOk, canMove, ads = false) {
     spd = (p.running ? P.run : p.stance === 'crouch' ? P.crouchSpeed : P.walk) * (ads ? P.adsSpeed : 1) * (p.spdMul || 1);
     dx = mx / len; dy = my / len;
   }
+  if (blockedAt(p.x, p.y, P.r, p.z || 0) || stairBlocks(p.x, p.y, p.z || 0)) unstick(p);   // ended up overlapping something (a rail, a wall): step out to the nearest clear spot
   const ox = p.x, oy = p.y, z = p.z || 0;
   const onRamp = rampAt(p.x, p.y) >= 0 && z > 6;   // up on a staircase: its side has a rail, so no walking off it
   const ok = (x, y) => !blockedAt(x, y, P.r, z) && supportAt(x, y, z) <= z + 14 && !stairBlocks(x, y, z) &&
@@ -706,10 +707,11 @@ function rappelSpot(p) {
 function startRappel(p) { const s = rappelSpot(p); if (s) p.rap = { x: s[0], y: s[1], over: false }; }
 // after a drop you can land overlapping the wall under the balcony edge: nudge to the nearest clear spot
 function unstick(p) {
-  if (!blockedAt(p.x, p.y, P.r, p.z)) return;
+  const bad = (x, y) => blockedAt(x, y, P.r, p.z) || stairBlocks(x, y, p.z);
+  if (!bad(p.x, p.y)) return;
   for (let d = 2; d <= 32; d += 2) for (let a = 0; a < 16; a++) {
     const x = p.x + Math.cos(a / 8 * Math.PI) * d, y = p.y + Math.sin(a / 8 * Math.PI) * d;
-    if (!blockedAt(x, y, P.r, p.z)) { p.x = x; p.y = y; return; }
+    if (!bad(x, y)) { p.x = x; p.y = y; return; }
   }
 }
 
@@ -822,7 +824,7 @@ function aimTarget(m, p) {
   const [ex, ey] = eyePos(p.x, p.y, p.yaw, p.lean || 0);
   const w = WEAPONS[p.weapon || 'rifle'];
   curLos = p.team;
-  const hit = castRay(ex, ey, (p.z || 0) + STANCES[p.stance].eye, p.yaw, p.pitch, m.players.filter(o => o.alive && o.team !== p.team), w.spread);
+  const hit = castRay(ex, ey, (p.z || 0) + STANCES[p.stance].eye, p.yaw, p.pitch, m.players.filter(o => o.alive && o.team !== p.team && !(o.fx.cloak > 0)), w.spread);   // cloaked ECHO can't be locked onto
   curLos = null;
   return hit && hit.along <= w.range ? hit : null;   // the shotgun doesn't fire at targets out of its range
 }
@@ -902,7 +904,7 @@ const reached = (p, s, r) => Math.hypot(s[0] - p.x, s[1] - p.y) < r && Math.abs(
 function botThink(m, b) {
   const br = b.brain, inp = { mx: 0, my: 0, yaw: b.yaw, pitch: 0 };
   const goal = botGoal(m, b);
-  const foes = m.players.filter(o => o.alive && o.team !== b.team);
+  const foes = m.players.filter(o => o.alive && o.team !== b.team && !(o.fx.cloak > 0));   // bots can't see a cloaked ECHO
   // remember getting hit (to back off)
   if (br.lastHp != null && b.hp < br.lastHp) br.hurtT = 120;
   br.lastHp = b.hp;
@@ -1512,7 +1514,7 @@ function useUlt(m, p) {
     m.events.push(['tp', p.id, Math.round(p.x), Math.round(p.y)]);
     Object.assign(p, { x: p.mark[0], y: p.mark[1], z: p.mark[2], vz: 0, rap: null, onLadder: false, dashT: 0, dashTo: null });
   }
-  else if (p.op === 'echo') { for (const o of m.players) if (o.alive && o.team !== p.team) o.fx.reveal = Math.max(o.fx.reveal || 0, 900); }
+  else if (p.op === 'echo') { p.fx.cloak = 300; for (const o of m.players) if (o.alive && o.team !== p.team) o.fx.reveal = Math.max(o.fx.reveal || 0, 900); }   // + 5 s invisible
   else if (p.op === 'haven') {   // every knocked-out teammate comes back next to you (their reboot cards are used up)
     for (const o of down) {
       if (m.cards) m.cards = m.cards.filter(c => c.id !== o.id);
@@ -1695,7 +1697,7 @@ function stepMatch(m) {
       players: m.players.map(p => [p.id, r1(p.x), r1(p.y), p.hp, p.alive ? 1 : 0, r3(p.yaw), r3(p.pitch), p.kills,
         STANCE_CODE[p.stance] + (p.running ? 4 : 0) + (p.ads ? 8 : 0) + (p.lean < 0 ? 16 : p.lean > 0 ? 32 : 0) + (p.rap ? 64 : 0) + (p.onLadder ? 128 : 0), Math.ceil(p.cd.boom / 6), Math.ceil(p.cd.frag / 6), Math.ceil(p.cd.therm / 6), WEAPONS[p.weapon || 'rifle'].code + (p.switchT > 0 ? 2 : 0), r1(p.z || 0), p.alive ? 0 : Math.ceil((p.respawnT || 0) / 60), Math.ceil((p.tac || 0) / 60),
         OPS[p.op] ? Math.floor(p.ult / (OPS[p.op].ult.charge * 60) * 100) : 0,
-        (p.fx.over > 0 ? 1 : 0) + (p.fx.rush > 0 ? 2 : 0) + (p.fx.reveal > 0 ? 4 : 0) + (p.fx.slow > 0 ? 8 : 0) + (p.fx.rampage > 0 ? 16 : 0), OPS[p.op] && OPS[p.op].tac.charges ? p.tacCh : -1]),
+        (p.fx.over > 0 ? 1 : 0) + (p.fx.rush > 0 ? 2 : 0) + (p.fx.reveal > 0 && !(p.fx.cloak > 0) ? 4 : 0) + (p.fx.slow > 0 ? 8 : 0) + (p.fx.rampage > 0 ? 16 : 0) + (p.fx.cloak > 0 ? 32 : 0), OPS[p.op] && OPS[p.op].tac.charges ? p.tacCh : -1]),
       walls: (m.walls2 || []).map(w => [w.id, r1(w.x1), r1(w.y1), r1(w.x2), r1(w.y2), r1(w.z), w.hp, w.team]),
       traps: (m.traps || []).map(t => [t.id, r1(t.x), r1(t.y), r1(t.z), t.ceil ? 1 : 0, t.team]),
       zones: (m.zones || []).map(z => [z.k, r1(z.x), r1(z.y), z.r, Math.ceil(z.t / 60), z.team]),
@@ -1782,5 +1784,5 @@ function start(opts = {}) {
 
 // identifies the map, so a client only plays on a server with the same one
 const MAP_ID = MAP.w + 'x' + MAP.h + '-' + MAP.walls.length + '-' + UP.ladders.length;
-return { barrierCanPlace, TRAP_R, setRailBroken, railSpot, mantleSpot, startMantle, OPS, OP_LIST, setZones, setWalls, setLosTeam, BARRIER_H, startDash, MAP_ID, slabRects, onSlab, ladderAt, rappelSpot, connect, start, tick, matchmake, createPractice, MAP, P, LOOK_SIZES, STANCES, KINDS, recoilKick, blocked, lineOfSight, stepMovement, castRay, predictThrow, segmentClear, eyePos, setBroken, panelUnder, EXTRACT, MODES, clear3, supportAt, blockedAt, _matches: matches, WEAPONS, WEAPON_BY_CODE, weaponDamage, weaponKick, get botFillMs() { return BOT_FILL_MS; } };
+return { barrierCanPlace, TRAP_R, setRailBroken, railSpot, mantleSpot, startMantle, OPS, OP_LIST, setZones, setWalls, setLosTeam, BARRIER_H, startDash, MAP_ID, slabRects, onSlab, ladderAt, rappelSpot, connect, start, tick, matchmake, createPractice, MAP, P, LOOK_SIZES, STANCES, KINDS, recoilKick, blocked, lineOfSight, stepMovement, castRay, predictThrow, segmentClear, eyePos, setBroken, panelUnder, EXTRACT, MODES, clear3, supportAt, blockedAt, stairBlocks, rampAt, _matches: matches, WEAPONS, WEAPON_BY_CODE, weaponDamage, weaponKick, get botFillMs() { return BOT_FILL_MS; } };
 });

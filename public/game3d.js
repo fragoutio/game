@@ -1161,7 +1161,7 @@
   }
   function onTargetNow() {
     if (!curState || !me.alive) return false;
-    return !!rayHit([...actors.values()].filter(a => a.alive && a.info.team !== match.myTeam));
+    return !!rayHit([...actors.values()].filter(a => a.alive && a.info.team !== match.myTeam && !a.cloaked));
   }
 
   // ---------- Practice range (while matchmaking) ----------
@@ -1431,6 +1431,8 @@
     const fx = row[17] || 0;
     me.spdMul = (fx & 2 ? 1.35 : 1) * (fx & 8 ? 0.6 : 1);
     me.rampage = !!(fx & 16);   // RIOT's RAMPAGE: no recoil
+    if ((fx & 32) && !me.cloaked) toast('INVISIBLE for 5 s: enemies can\'t see you or your name');
+    me.cloaked = !!(fx & 32);
     const t = document.querySelector('#abil [data-a="tac"]'), u = document.querySelector('#abil [data-a="ult"]');
     t.querySelector('span').textContent = op.tac.name; u.querySelector('span').textContent = op.ult.name;
     t.querySelector('b').textContent = op.tac.charges ? `×${me.tacCh}${me.tacLeft > 0 ? ' · ' + me.tacLeft + 's' : ''}` : me.tacLeft > 0 ? me.tacLeft + 's' : 'READY';
@@ -1790,6 +1792,7 @@
       } else if (act.rope) act.rope.visible = false;
       // names: teammates always, enemies only when you can actually see them
       proj.set(x, 2.05 + act.sz * S, z).project(camera);
+      act.cloaked = !!(p[4] && ((p[17] || 0) & 32) && act.info.team !== match.myTeam);   // ECHO's ult: invisible to enemies, no name tag
       const revealed = !!(p[4] && ((p[17] || 0) & 4) && act.info.team !== match.myTeam);
       if (revealed !== !!act.xray) { act.xray = revealed; act.ch.root.traverse(o => { if (revealed) o.layers.enable(1); else o.layers.disable(1); }); }
       if (revealed) xrayOn = true;
@@ -1803,8 +1806,8 @@
           if (Core.lineOfSight(cx, cy, act.sx + px, act.sy + py, cz, act.sz + pz)) { inView = true; break; }
       }
       if (inView) act.seenAt = now;
-      act.ch.root.visible = inView || now - (act.seenAt || 0) < 400;   // no flicker: stay drawn for a moment after
-      const vis = p[4] && proj.z < 1 && seen;
+      act.ch.root.visible = !act.cloaked && (inView || now - (act.seenAt || 0) < 400);   // no flicker: stay drawn for a moment after
+      const vis = p[4] && proj.z < 1 && seen && !act.cloaked;
       act.label.style.display = vis ? '' : 'none';
       if (vis) {
         act.label.style.left = `${(proj.x * 0.5 + 0.5) * innerWidth}px`;
