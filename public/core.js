@@ -591,7 +591,48 @@ function playerLeft(client) {
 // One 60 Hz movement step. p: {x, y, stance, running, slideT, slideCd, slideX, slideY}.
 // (mx, my) is the wanted direction in the arena; run/crouch are the held keys; runOk says whether
 // running is allowed (players: only when moving forward). canMove is false during the countdown.
+// Anti-stuck: if you hold a direction for 3 s and barely move, check whether you can actually walk anywhere.
+// If almost every direction is blocked (wedged in a handrail, a staircase, a corner), you're bumped to the
+// nearest open spot. Runs the same on your computer and on the server.
+const STUCK_TICKS = 180;
 function stepMovement(p, mx, my, run, crouch, runOk, canMove, ads = false) {
+  const x0 = p.x, y0 = p.y, z0 = p.z || 0;
+  moveOnce(p, mx, my, run, crouch, runOk, canMove, ads);
+  if (p.probe) return;
+  if (!(mx || my) || !canMove || p.rap || p.dashT > 0) { p.stuckT = 0; p.stuckD = 0; return; }
+  p.stuckT = (p.stuckT || 0) + 1; p.stuckD = (p.stuckD || 0) + Math.hypot(p.x - x0, p.y - y0) + Math.abs((p.z || 0) - z0);
+  if (p.stuckT < STUCK_TICKS) return;
+  const barely = p.stuckD < 10;
+  p.stuckT = 0; p.stuckD = 0;
+  if (barely && freeDirs(p) < 4) bumpOut(p);
+}
+// how many of 16 directions you can actually get somewhere in (16+ px in a fifth of a second)
+function freeDirs(p) {
+  let n = 0;
+  for (let a = 0; a < 16; a++) {
+    const q = { x: p.x, y: p.y, z: p.z || 0, vz: 0, yaw: 0, stance: 'stand', running: false, slideT: 0, slideCd: 0, dropT: 30, probe: true, bot: p.bot, spdMul: 1 };
+    const y = a / 8 * Math.PI;
+    for (let i = 0; i < 12; i++) moveOnce(q, Math.cos(y), Math.sin(y), false, false, true, true);
+    if (Math.hypot(q.x - p.x, q.y - p.y) > 16 || Math.abs(q.z - (p.z || 0)) > 10) n++;
+  }
+  return n;
+}
+// the nearest spot (same floor if possible) where you're clear and can walk freely
+function bumpOut(p) {
+  const z = p.z || 0;
+  for (let d = 6; d <= 200; d += 6) for (let a = 0; a < 24; a++) {
+    const x = p.x + Math.cos(a / 12 * Math.PI) * d, y = p.y + Math.sin(a / 12 * Math.PI) * d;
+    if (x < 20 || y < 20 || x > MAP.w - 20 || y > MAP.h - 20) continue;
+    for (const tz of z >= UP.floor - 14 ? [UP.floor, 0] : [z, 0]) {
+      const sz = supportAt(x, y, tz + 14);
+      if (Math.abs(sz - tz) > 14 || blockedAt(x, y, P.r + 2, sz) || stairBlocks(x, y, sz)) continue;
+      const q = { x, y, z: sz, bot: p.bot };
+      if (freeDirs(q) >= 12) { Object.assign(p, { x, y, z: sz, vz: 0, onLadder: false, stance: 'stand', slideT: 0 }); return true; }
+    }
+  }
+  return false;
+}
+function moveOnce(p, mx, my, run, crouch, runOk, canMove, ads = false) {
   if (ads) run = false;
   if (p.slideCd > 0) p.slideCd--;
   const len = Math.hypot(mx, my);
