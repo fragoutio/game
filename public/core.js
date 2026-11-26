@@ -245,7 +245,7 @@ const OPS = {
     ult: { name: 'RAMPAGE', charge: 100, desc: '7 s: fire twice as fast with no recoil, headshots do nothing, 60% less body damage, never stop shooting' } },
   volt:   { name: 'VOLT', cls: 'SKIRMISHER', color: '#ffd23f',
     tac: { name: 'BLINK', cd: 10, desc: 'Dash 5 m the way you are moving, straight through walls' },
-    ult: { name: 'WARP', charge: 90, desc: 'Teleport to your warp point (hold Tab 4 s to set it, any time)' } },
+    ult: { name: 'PHANTOM', charge: 90, desc: '15 s invisible (no name tag) and 50% faster. Shooting an enemy ends it' } },
   echo:   { name: 'ECHO', cls: 'RECON', color: '#3fe0ff',
     tac: { name: 'PULSE', cd: 20, desc: 'Highlight enemies within 20 m for 7 s, even through walls' },
     ult: { name: 'SWEEP', charge: 110, desc: 'Highlight every enemy for 15 s, even through walls, and turn invisible for the first 5 s (no name tag)' } },
@@ -1549,12 +1549,8 @@ function useUlt(m, p) {
   if (!op || p.ult < op.ult.charge * 60 || !p.alive) return;
   const down = m.players.filter(o => !o.alive && o.team === p.team && o !== p);
   if (p.op === 'haven' && !down.length) return;   // nobody to bring back: keep the charge
-  if (p.op === 'volt' && !p.mark) return;         // no warp point set yet
   p.ult = 0;
-  if (p.op === 'riot') p.fx.rampage = 420; else if (p.op === 'volt') {   // warp to the point you set
-    m.events.push(['tp', p.id, Math.round(p.x), Math.round(p.y)]);
-    Object.assign(p, { x: p.mark[0], y: p.mark[1], z: p.mark[2], vz: 0, rap: null, onLadder: false, dashT: 0, dashTo: null });
-  }
+  if (p.op === 'riot') p.fx.rampage = 420; else if (p.op === 'volt') { p.fx.cloak = 900; p.fx.phantom = 900; }   // PHANTOM: 15 s invisible and 50% faster (ends when you shoot an enemy)
   else if (p.op === 'echo') { p.fx.cloak = 300; for (const o of m.players) if (o.alive && o.team !== p.team) o.fx.reveal = Math.max(o.fx.reveal || 0, 900); }   // + 5 s invisible
   else if (p.op === 'haven') {   // every knocked-out teammate comes back next to you (their reboot cards are used up)
     for (const o of down) {
@@ -1592,7 +1588,7 @@ function stepAbilities(m) {
   for (const z of m.zones) if (z.k === 'lock') for (const o of m.players) {
     if (o.alive && o.team !== z.team && Math.hypot(o.x - z.x, o.y - z.y) < z.r) { o.fx.slow = 6; o.fx.reveal = Math.max(o.fx.reveal || 0, 6); }
   }
-  for (const p of m.players) p.spdMul = (p.fx.rush > 0 ? 1.35 : 1) * (p.fx.slow > 0 ? 0.6 : 1);
+  for (const p of m.players) p.spdMul = (p.fx.rush > 0 ? 1.35 : 1) * (p.fx.phantom > 0 ? 1.5 : 1) * (p.fx.slow > 0 ? 0.6 : 1);
   curWalls = m.walls2;
   for (const s of m.strikes) if (--s.t <= 0) {
     explode(m, { x: s.x, y: s.y, z: supportAt(s.x, s.y, 200) + 4, owner: s.owner, team: s.team }, 62, 75, DMG_SRC.frag);
@@ -1711,6 +1707,7 @@ function stepMatch(m) {
       const ex = Math.round(ox + Math.cos(p.yaw) * d), ey = Math.round(oy + Math.sin(p.yaw) * d);
       const ez = Math.round(clamp(hit.h, (o.z || 0) + 2, (o.z || 0) + STANCES[o.stance].height));
       m.events.push(['s', p.id, p.burst, ex, ey, ez, W.code]);
+      if (p.fx.phantom > 0) { p.fx.phantom = 0; p.fx.cloak = 0; }   // VOLT's PHANTOM ends when you shoot an enemy
       damage(m, o, weaponDamage(wn, d, hit.head), p, wn === 'shotgun' ? DMG_SRC.shotgun : DMG_SRC.gun, hit.head, ex, ey, ez);
       // Players apply this same kick on their own computer when they get the 's' event
       if (p.bot && !(p.fx.rampage > 0)) { const k = weaponKick(wn, p.burst); p.pitch = Math.min(P.pitchMax, p.pitch + k.pitch); p.yaw = wrapAngle(p.yaw + k.yaw); }
@@ -1738,7 +1735,7 @@ function stepMatch(m) {
       players: m.players.map(p => [p.id, r1(p.x), r1(p.y), p.hp, p.alive ? 1 : 0, r3(p.yaw), r3(p.pitch), p.kills,
         STANCE_CODE[p.stance] + (p.running ? 4 : 0) + (p.ads ? 8 : 0) + (p.lean < 0 ? 16 : p.lean > 0 ? 32 : 0) + (p.rap ? 64 : 0) + (p.onLadder ? 128 : 0), Math.ceil(p.cd.boom / 6), Math.ceil(p.cd.frag / 6), Math.ceil(p.cd.therm / 6), WEAPONS[p.weapon || 'rifle'].code + (p.switchT > 0 ? 2 : 0), r1(p.z || 0), p.alive ? 0 : Math.ceil((p.respawnT || 0) / 60), Math.ceil((p.tac || 0) / 60),
         OPS[p.op] ? Math.floor(p.ult / (OPS[p.op].ult.charge * 60) * 100) : 0,
-        (p.fx.over > 0 ? 1 : 0) + (p.fx.rush > 0 ? 2 : 0) + (p.fx.reveal > 0 && !(p.fx.cloak > 0) ? 4 : 0) + (p.fx.slow > 0 ? 8 : 0) + (p.fx.rampage > 0 ? 16 : 0) + (p.fx.cloak > 0 ? 32 : 0), OPS[p.op] && OPS[p.op].tac.charges ? p.tacCh : -1]),
+        (p.fx.over > 0 ? 1 : 0) + (p.fx.rush > 0 ? 2 : 0) + (p.fx.reveal > 0 && !(p.fx.cloak > 0) ? 4 : 0) + (p.fx.slow > 0 ? 8 : 0) + (p.fx.rampage > 0 ? 16 : 0) + (p.fx.cloak > 0 ? 32 : 0) + (p.fx.phantom > 0 ? 64 : 0), OPS[p.op] && OPS[p.op].tac.charges ? p.tacCh : -1]),
       walls: (m.walls2 || []).map(w => [w.id, r1(w.x1), r1(w.y1), r1(w.x2), r1(w.y2), r1(w.z), w.hp, w.team]),
       traps: (m.traps || []).map(t => [t.id, r1(t.x), r1(t.y), r1(t.z), t.ceil ? 1 : 0, t.team]),
       zones: (m.zones || []).map(z => [z.k, r1(z.x), r1(z.y), z.r, Math.ceil(z.t / 60), z.team]),

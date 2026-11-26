@@ -1388,20 +1388,18 @@
   }
   function useUltimate() {
     const op = Core.OPS[me.op]; if (!op || !me.alive) return;
-    if (me.op === 'volt' && !me.mark) { sfx.denied(); toast('Hold Tab for 4 s to set your warp point first'); return; }
     if (me.op === 'haven' && curState && !curState.players.some(p => !p[4] && p[0] !== match.you && actors.get(p[0]) && actors.get(p[0]).info.team === match.myTeam)) { sfx.denied(); toast('No knocked-out teammates to reboot'); return; }
     if ((me.ultPct || 0) < 100) { sfx.denied(); toast(`${op.ult.name} charging: ${me.ultPct || 0}%`); return; }
     me.ultN = (me.ultN || 0) + 1;
-    if (me.op === 'volt') { burst(me.x * S, 1, me.y * S, 0xffd23f, 20, 4); me.x = me.mark[0]; me.y = me.mark[1]; me.z = me.mark[2]; me.vz = 0; burst(me.x * S, 1, me.y * S, 0xffd23f, 20, 4); }
+    if (me.op === 'volt') burst(me.x * S, 1, me.y * S, 0xffd23f, 20, 4);   // PHANTOM: fade out
   }
-  // VOLT: hold Tab 4 s to set the warp point where you stand
+  // (VOLT used to hold Tab 4 s to set a warp point; PHANTOM replaced that)
   let capsAt = 0, capsMarked = false;
   function ultDown() {
     capsAt = performance.now(); capsMarked = false;
-    if (me.op !== 'volt') useUltimate();   // everyone else: the ultimate fires on press
+    useUltimate();   // the ultimate fires on press
   }
   function ultUp() {
-    if (capsAt && me.op === 'volt' && !capsMarked) useUltimate();   // a tap warps
     capsAt = 0; $('mark-ring').hidden = true;
   }
   const markMesh = new THREE.Group();
@@ -1414,7 +1412,7 @@
   }
   function updateMark(now) {
     const ring = $('mark-ring');
-    if (capsAt && me.op === 'volt' && !capsMarked && me.alive && match) {
+    if (false) {   // (warp points are gone: VOLT's ult is PHANTOM now)
       const k = Math.min(1, (now - capsAt) / 4000);
       ring.hidden = false; ring.style.setProperty('--p', Math.round(k * 100) + '%');
       if (k >= 1) {
@@ -1422,16 +1420,17 @@
         toast('Warp point set'); sfx.ready(); ring.hidden = true;
       }
     }
-    markMesh.visible = !!(me.mark && me.op === 'volt' && match);
+    markMesh.visible = false;
     if (markMesh.visible) markMesh.position.set(me.mark[0] * S, me.mark[2] * S, me.mark[1] * S);
   }
   function updateAbilityHud(row) {
     const op = Core.OPS[me.op]; if (!op || !row) return;
     me.tacLeft = row[15] || 0; me.ultPct = row[16] || 0; me.tacCh = row[18];
     const fx = row[17] || 0;
-    me.spdMul = (fx & 2 ? 1.35 : 1) * (fx & 8 ? 0.6 : 1);
+    me.spdMul = (fx & 2 ? 1.35 : 1) * (fx & 64 ? 1.5 : 1) * (fx & 8 ? 0.6 : 1);
     me.rampage = !!(fx & 16);   // RIOT's RAMPAGE: no recoil
-    if ((fx & 32) && !me.cloaked) toast('INVISIBLE for 5 s: enemies can\'t see you or your name');
+    if ((fx & 32) && !me.cloaked) toast(fx & 64 ? 'INVISIBLE + 50% FASTER for 15 s: shooting an enemy ends it' : 'INVISIBLE for 5 s: enemies can\'t see you or your name');
+    if (me.cloaked && !(fx & 32) && me.op === 'volt') toast('Visible again');
     me.cloaked = !!(fx & 32);
     const t = document.querySelector('#abil [data-a="tac"]'), u = document.querySelector('#abil [data-a="ult"]');
     t.querySelector('span').textContent = op.tac.name; u.querySelector('span').textContent = op.ult.name;
