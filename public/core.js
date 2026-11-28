@@ -15,8 +15,11 @@ const SEND_EVERY = 2; // broadcast state every 2 ticks (30 Hz)
 let BOT_FILL_MS = 30_000; // wait this long before adding bots
 let log = () => {};
 
-// ---------- Arena ----------
-const MAP = (() => {
+// ---------- Maps ----------
+// Each map is a builder. MAP and UP (its upper floor) are filled in from the map being played (useMap), so
+// every helper below always works on the current one. The server switches map per match each tick.
+const MAPS = {};
+MAPS.arena = () => {
   // Two 2-storey buildings, blue (west) and red (east), face each other across an open courtyard with the gem in
   // the middle. Ground floor: a home base strip at the back, then north / centre / south rooms with doorways
   // (some covered by green panels) and a door out to the courtyard from each. Upstairs (UP.floor px up) is one big
@@ -84,12 +87,97 @@ const MAP = (() => {
     // Extraction: reboot point in the middle of the back wall of each home base [x, y, yaw]
     reboot: { A: [72, H / 2, 0], B: [W - 72, H / 2, Math.PI] },
   };
-})();
-const UP = MAP.upper;
+};
+// TRAIN YARD (night): a station building at each end (home base behind it, a raised walkway above the platform),
+// freight trains rolling up and down the tracks in front of each station (they block sight and shots; Space at a
+// car climbs on top and you ride it), and a bridge over the middle with a tunnel under it. The gem rides a
+// slow flatbed car up and down the middle track.
+MAPS.yard = () => {
+  const W = 1920, H = 1120;
+  const west = {
+    walls: [
+      // station back wall (doors at y 260-340, 520-600, 780-860) and, upstairs, a wall above it
+      [256, 32, 32, 228, 1], [256, 340, 32, 180, 1], [256, 600, 32, 180, 1], [256, 860, 32, 228, 1], [256, 32, 32, 1056, 1, 1],
+      // platform: luggage, benches and a ticket booth
+      [470, 150, 48, 40, 0], [470, 930, 48, 40, 0], [500, 540, 40, 40, 0], [480, 330, 40, 60, 1], [480, 730, 40, 60, 1],
+      // up on the walkway
+      [340, 300, 40, 40, 0, 1], [340, 780, 40, 40, 0, 1],
+      // yard between the platform track and the bridge
+      [770, 160, 48, 40, 0], [770, 920, 48, 40, 0], [840, 300, 32, 56, 0], [840, 764, 32, 56, 0], [880, 200, 32, 48, 0], [880, 872, 32, 48, 0],
+      // tunnel walls under the bridge (open where the middle track runs through)
+      [664, 480, 240, 16, 1], [664, 624, 240, 16, 1],
+    ],
+    floor: [288, 32, 152, 1056],   // raised walkway over the platform
+    // stairs [x, y, w, h, dir, outside]: outside = a free-standing staircase (no stairwell in a floor around it)
+    stairs: [[296, 40, 56, 160, 'N'], [296, 920, 56, 160, 'S'], [704, 320, 56, 160, 'S', 1], [704, 640, 56, 160, 'N', 1]],
+    ladders: [[440, 540, 18, 40, 'W'], [800, 462, 40, 18, 'S'], [800, 640, 40, 18, 'N']],
+  };
+  const flip = r => [W - r[0] - r[2], r[1], r[2], r[3], ...r.slice(4)];
+  const flipDir = r => { const f = flip(r); f[4] = { W: 'E', E: 'W' }[f[4]] || f[4]; return f; };
+  const spawnsA = [[80, 120, 0.6], [80, 1000, -0.6], [200, 290, 0.3], [200, 830, -0.3]];
+  const flipSpot = ([x, y, a]) => [W - x, y, Math.round((Math.PI - a) * 100) / 100];
+  // trains: each car is [x, w, len, h, offset along the train]; the whole train slides between y0 and y1
+  const trains = [
+    { x: 604, w: 56, h: 56, y0: 40, y1: 560, speed: 0.9, phase: 0, cars: [0, 320], len: 200, color: 0x8a3b2e },
+    { x: W - 604 - 56, w: 56, h: 56, y0: 40, y1: 560, speed: 0.9, phase: 520, cars: [0, 320], len: 200, color: 0x2e5a8a },
+    { x: 936, w: 48, h: 20, y0: 200, y1: 800, speed: 0.35, phase: 300, cars: [0], len: 120, color: 0x6b6f76, gem: true },
+  ];
+  const cars = [], carWalls = [];
+  for (const t of trains) for (const off of t.cars) {
+    const wall = [t.x, t.y0 + off, t.w, t.len, 4, 0, t.h];
+    carWalls.push(wall); cars.push({ wall, off, train: t });
+  }
+  const edgeGaps = [[700, 764], [784, 856], [920, 1000], [1064, 1136], [1156, 1220]];
+  return {
+    w: W, h: H, theme: 'night',
+    walls: [[0, 0, W, 32], [0, H - 32, W, 32], [0, 0, 32, H], [W - 32, 0, 32, H],
+      ...west.walls, ...west.walls.map(flip), ...carWalls],
+    spawns: { A: spawnsA, B: spawnsA.map(flipSpot) },
+    gem: [960, 560],
+    defend: [[880, 420, 0], [1040, 420, 3.14], [880, 700, 0], [1040, 700, 3.14]],
+    bases: { A: [32, 32, 224, H - 64], B: [W - 256, 32, 224, H - 64] },
+    upper: {
+      floor: 80, rail: 22, rails: [],
+      floors: [west.floor, flip(west.floor), [664, 480, 592, 160]],
+      holes: [],
+      stairs: [...west.stairs, ...west.stairs.map(flipDir)],
+      ladders: [...west.ladders, ...west.ladders.map(flipDir)],
+      // extra handrails along the bridge edges (gaps: stair tops, ladders, and a drop onto the gem car)
+      railEdges: [[664, 480, 1256, 480, edgeGaps], [664, 640, 1256, 640, edgeGaps]],
+    },
+    respawn: { A: [[60, 64, 0.6], [60, H - 64, -0.6]], B: [[W - 60, H - 64, -2.5], [W - 60, 64, 2.5]] },
+    reboot: { A: [72, H / 2, 0], B: [W - 72, H / 2, Math.PI] },
+    cars, carWalls, trains, gemCar: cars.findIndex(cr => cr.train.gem),
+    tracks: [632, 960, W - 632],
+    lamps: [[560, 100], [560, 1020], [W - 560, 100], [W - 560, 1020], [760, 560], [W - 760, 560], [960, 120], [960, 1000], [440, 440], [W - 440, 440], [440, 680], [W - 440, 680]],
+  };
+};
+const MAP = {}, UP = {};
+const mapCache = {};
+let curMapId = null;
+// switch every helper to map id (built and cached the first time)
+function useMap(id) {
+  if (!MAPS[id]) id = 'arena';
+  if (id === curMapId) return;
+  for (const k in MAP) delete MAP[k];
+  for (const k in UP) delete UP[k];
+  curMapId = id;
+  let cm = mapCache[id];
+  if (!cm) {
+    const def = MAPS[id](), up = def.upper;
+    Object.assign(MAP, def, { id, upper: UP, cars: def.cars || [], carWalls: def.carWalls || [] });
+    Object.assign(UP, up);
+    buildRails();
+    cm = mapCache[id] = { map: Object.assign({}, MAP), up: Object.assign({}, UP), nav: null };
+  } else { Object.assign(MAP, cm.map); Object.assign(UP, cm.up); }
+  if (!cm.nav && navReady) cm.nav = buildNav();
+  if (cm.nav) navH = cm.nav;
+}
+let navReady = false, navH = null;
 // Glass handrails (UP.rail px tall) around the gaps in the upper floor and around the stairwells, so nobody falls
 // by accident. Openings are left where a ladder comes up and where you step off the top of a staircase.
 // Space vaults over a rail (see railSpot); X still rappels down past one.
-(function buildRails() {
+function buildRails() {
   const T = 4, rails = [];
   // an axis-aligned edge from (x1,y1) to (x2,y2), minus gaps [[a, b]] along it
   const edge = (x1, y1, x2, y2, gaps) => {
@@ -107,15 +195,18 @@ const UP = MAP.upper;
     edge(x, y, x + w, y, ladderGaps(true, y)); edge(x, y + h, x + w, y + h, ladderGaps(true, y + h));
     edge(x, y, x, y + h, ladderGaps(false, x)); edge(x + w, y, x + w, y + h, ladderGaps(false, x + w));
   }
-  for (const [x, y, w, h, dir] of UP.stairs) {   // stairwells: open beside the flat top (where you step off)
+  for (const [x, y, w, h, dir, outside] of UP.stairs) {   // stairwells: open beside the flat top (where you step off)
+    if (outside) continue;   // a free-standing staircase: just its own side rails (UP.sideRails)
     const flat = dir === 'N' ? [y - 1, y + h * 0.2] : [y + h * 0.8, y + h + 1];
     edge(x, y, x, y + h, [flat]); edge(x + w, y, x + w, y + h, [flat]);
     edge(x, dir === 'N' ? y + h : y, x + w, dir === 'N' ? y + h : y, []);   // the low end
   }
+  for (const [x1, y1, x2, y2, gaps] of UP.railEdges || []) edge(x1, y1, x2, y2, gaps);
   UP.rails = rails;
   UP.sideRails = UP.stairs.flatMap(([x, y, w, h, dir], si) => [0, 1].map(e => ({ id: rails.length + si * 2 + e, si, x: e ? x + w : x,
     y0: dir === 'N' ? y + h * 0.2 : y, y1: dir === 'N' ? y + h : y + h * 0.8 })));
-})();
+}
+useMap('arena');
 const inRect = (r, x, y) => x >= r[0] && x <= r[0] + r[2] && y >= r[1] && y <= r[1] + r[3];
 const inOpen = (r, x, y) => x > r[0] && x < r[0] + r[2] && y > r[1] && y < r[1] + r[3];
 // is there upper floor at (x, y)? (inside a building, not over a gap or a stairwell)
@@ -148,7 +239,7 @@ function ladderAt(x, y) {
 // how tall each wall is: the outer border blocks everything, crates are 62 px, room walls/vents/panels 77 px;
 // upstairs walls start at the upper floor
 const wallBot = i => (MAP.walls[i][5] ? UP.floor : 0);
-const wallTop = i => (i < 4 ? 9999 : wallBot(i) + (MAP.walls[i][4] ? 77 : 62));
+const wallTop = i => (i < 4 ? 9999 : MAP.walls[i][4] === 4 ? MAP.walls[i][6] : wallBot(i) + (MAP.walls[i][4] ? 77 : 62));
 // height of a stair ramp under (x, y), or -1 if not on stairs
 function rampAt(x, y) {
   for (const [sx, sy, sw, sh, dir] of UP.stairs) {
@@ -173,7 +264,52 @@ function supportAt(x, y, z) {
   const r = rampAt(x, y);
   if (r >= 0 && r <= z + 14) h = Math.max(h, r);
   if (z >= UP.floor - 14 && onSlab(x, y)) h = Math.max(h, UP.floor);
+  for (const cw of MAP.carWalls) if (cw[6] <= z + 14 && inRect(cw, x, y)) h = Math.max(h, cw[6]);   // the roof of a freight car
   return h;
+}
+// ---------- Freight cars ----------
+// Where every car is at match tick t (they slide back and forth on their tracks). riders: players to carry
+// along when they stand on a roof, or to push out of the way when a car runs into them.
+function carY(cr, t) {
+  const tr = cr.train, span = tr.y1 - tr.y0, d = ((t * tr.speed + tr.phase) % (2 * span) + 2 * span) % (2 * span);
+  return tr.y0 + (d < span ? d : 2 * span - d) + cr.off;
+}
+function setCarTime(t, riders) {
+  for (const cr of MAP.cars) {
+    const w = cr.wall, ny = carY(cr, t), dy = ny - w[1];
+    if (!dy) continue;
+    if (riders) for (const p of riders) if (Math.abs((p.z || 0) - w[6]) < 2 && inRect(w, p.x, p.y)) p.y += dy;   // riding on top
+    w[1] = ny;
+    if (riders) for (const p of riders) {   // in the way: knocked off the track to the side (the nearer one, unless that's blocked)
+      const z = p.z || 0;
+      if (z >= w[6] - 1 || !rectHitsCircle(w, p.x, p.y, P.r)) continue;
+      const lx = w[0] - P.r - 0.5, rx = w[0] + w[2] + P.r + 0.5, ok = x => !blockedAt(x, p.y, P.r, z) && !stairBlocks(x, p.y, z);
+      const sides = p.x < w[0] + w[2] / 2 ? [lx, rx] : [rx, lx], to = sides.find(ok);
+      if (to != null) p.x = to; else { p.x = sides[0]; unstick(p); }
+    }
+  }
+}
+// where the gem sits at home: on its flatbed car, or on its pedestal
+function gemHome() {
+  if (MAP.gemCar >= 0 && MAP.cars[MAP.gemCar]) { const w = MAP.cars[MAP.gemCar].wall; return [w[0] + w[2] / 2, w[1] + w[3] / 2]; }
+  return MAP.gem;
+}
+// Space facing a freight car up close: climb onto its roof. Returns the spot on top, or null.
+function carSpot(p) {
+  if (p.dashT > 0 || p.rap || p.onLadder || !MAP.carWalls.length) return null;
+  const z = p.z || 0, fx = Math.cos(p.yaw || 0), fy = Math.sin(p.yaw || 0);
+  for (const w of MAP.carWalls) {
+    if (w[6] <= z + 2 || w[6] > z + 70) continue;
+    for (let d = 4; d <= P.r + 14; d += 2) {
+      if (!inRect(w, p.x + fx * d, p.y + fy * d)) continue;
+      for (const extra of [P.r + 4, P.r + 12, P.r + 20]) {
+        const x = p.x + fx * (d + extra), y = p.y + fy * (d + extra);
+        if (inRect([w[0] + 4, w[1] + 4, w[2] - 8, w[3] - 8], x, y) && !blockedAt(x, y, P.r, w[6])) return [x, y, w[6]];
+      }
+      return null;
+    }
+  }
+  return null;
 }
 
 const P = {
@@ -261,6 +397,9 @@ const OPS = {
   warden: { name: 'WARDEN', cls: 'CONTROLLER', color: '#c58bff',
     tac: { name: 'BARRIER', cd: 12, charges: 3, desc: 'Place a wall (3 charges). Your team shoots through it; enemies need 9 hits to break it. Face your wall up close and press Space again to mantle over it' },
     ult: { name: 'SPIKE TRAP', charge: 110, desc: 'Drop a trap on the floor (or the ceiling above you): an enemy who walks over or under it loses 80% of their health' } },
+  mirage: { name: 'MIRAGE', cls: 'TRICKSTER', color: '#ff8af0',
+    tac: { name: 'DECOY', cd: 15, desc: 'Send a copy of yourself running ahead. It has your name tag and fools bots; one hit pops it' },
+    ult: { name: 'MASQUERADE', charge: 100, desc: '5 copies of you appear around you and copy your every move for 10 s' } },
 };
 const OP_LIST = Object.keys(OPS);
 const cleanOp = o => (OPS[o] ? o : OP_LIST[(Math.random() * OP_LIST.length) | 0]);
@@ -379,12 +518,20 @@ function lineOfSight(ax, ay, bx, by, az = 33, bz = 33) { return clear3(ax, ay, a
 // their steps); layer 1 is the upper floor. A bot can step between neighbouring cells (in either layer) when their
 // heights differ by a step or less, so the staircases are the way between floors. navH = standing height, -1 = no.
 const CELL = 16, GW = MAP.w / CELL, GH = MAP.h / CELL, NC = GW * GH;
-const navH = new Float32Array(2 * NC).fill(-1);
-for (let i = 0; i < NC; i++) {
-  const x = (i % GW) * CELL + CELL / 2, y = Math.floor(i / GW) * CELL + CELL / 2, r = rampAt(x, y), h = r >= 0 ? r : 0;
-  if (!blockedAt(x, y, P.r + 2, h) && !stairBlocks(x, y, h)) navH[i] = h;
-  if (onSlab(x, y) && !blockedAt(x, y, P.r + 2, UP.floor)) navH[NC + i] = UP.floor;
+function buildNav() {
+  const nav = new Float32Array(2 * NC).fill(-1);
+  const saved = MAP.carWalls.map(w => w[0]);
+  for (const w of MAP.carWalls) w[0] = -9999;   // the trains move: plan routes as if the tracks were clear
+  for (let i = 0; i < NC; i++) {
+    const x = (i % GW) * CELL + CELL / 2, y = Math.floor(i / GW) * CELL + CELL / 2, r = rampAt(x, y), h = r >= 0 ? r : 0;
+    if (!blockedAt(x, y, P.r + 2, h) && !stairBlocks(x, y, h)) nav[i] = h;
+    if (onSlab(x, y) && !blockedAt(x, y, P.r + 2, UP.floor)) nav[NC + i] = UP.floor;
+  }
+  MAP.carWalls.forEach((w, k) => { w[0] = saved[k]; });
+  return nav;
 }
+navReady = true;
+mapCache[curMapId].nav = navH = buildNav();
 const cellOf = (x, y) => Math.max(0, Math.min(GW - 1, Math.floor(x / CELL))) + Math.max(0, Math.min(GH - 1, Math.floor(y / CELL))) * GW;
 // the node for a spot at height z (the floor you're on there), searching nearby cells if that one is blocked
 function nodeAt(x, y, z) {
@@ -541,25 +688,29 @@ function startMatch(mode, clients) {
     const c = slots[team][i];
     players.push(makePlayer(team, c ? c.name : botName(), c || null, c ? c.look : null, c ? c.op : null));
   }
-  const match = { mode, players, events: [], projectiles: [], fires: [], nextProj: 1, broken: new Set(), panelHp: new Map(), score: { A: 0, B: 0 }, round: 0, phase: 'countdown', phaseT: 120, tick: 0, over: false };
+  // the map: what the players asked for (the first one who picked one), otherwise either
+  const prefs = clients.map(cl => cl.mapPref).filter(mp => MAPS[mp]);
+  const map = prefs[0] || (Math.random() < 0.5 ? 'arena' : 'yard');
+  useMap(map);
+  const match = { mode, map, players, events: [], projectiles: [], fires: [], nextProj: 1, broken: new Set(), panelHp: new Map(), score: { A: 0, B: 0 }, round: 0, phase: 'countdown', phaseT: 120, tick: 0, over: false };
   matches.add(match);
   for (const p of players) if (p.client) { p.client.queued = null; p.client.match = match; p.client.player = p; }
   resetRound(match);
-  for (const p of players) if (p.client) send(p.client, { t: 'match', mode, you: p.id, map: MAP, cfg: P, roundsToWin: ROUNDS_TO_WIN,
+  for (const p of players) if (p.client) send(p.client, { t: 'match', mode, you: p.id, map, cfg: P, roundsToWin: ROUNDS_TO_WIN,
     players: publicPlayers(match) });
-  log(`[match] ${mode}: ${players.map(p => p.name + (p.bot ? ' (bot)' : '')).join(', ')}`);
+  log(`[match] ${mode} on ${map}: ${players.map(p => p.name + (p.bot ? ' (bot)' : '')).join(', ')}`);
 }
 
 function resetRound(m) {
   m.round++; m.projectiles = []; m.fires = []; m.phase = 'countdown'; m.phaseT = 180; // 3 s: "3, 2, 1, FIGHT"
   m.broken = new Set(); m.panelHp = new Map(); m.roundReason = null;   // panels are rebuilt every round
   m.railBroken = new Set();
-  m.zones = []; m.strikes = []; m.walls2 = []; m.traps = [];
+  m.zones = []; m.strikes = []; m.walls2 = []; m.traps = []; m.decoys = [];
   for (const p of m.players) { p.fx = {}; p.tac = 0; p.dashT = 0; p.tacCh = OPS[p.op] && OPS[p.op].tac.charges || 0; }
   if (m.mode === 'extraction') {
     // like Siege: teams swap attack and defence every round
     m.attack = m.round % 2 === 1 ? 'A' : 'B';
-    m.gem = { state: 'home', x: MAP.gem[0], y: MAP.gem[1], carrier: 0, prog: 0 };
+    const gh = gemHome(); m.gem = { state: 'home', x: gh[0], y: gh[1], carrier: 0, prog: 0 };
     m.cards = [];
     m.timeLeft = EXTRACT.roundTicks;
   }
@@ -871,7 +1022,7 @@ function aimTarget(m, p) {
   const [ex, ey] = eyePos(p.x, p.y, p.yaw, p.lean || 0);
   const w = WEAPONS[p.weapon || 'rifle'];
   curLos = p.team;
-  const hit = castRay(ex, ey, (p.z || 0) + STANCES[p.stance].eye, p.yaw, p.pitch, m.players.filter(o => o.alive && o.team !== p.team && !(o.fx.cloak > 0)), w.spread);   // cloaked ECHO can't be locked onto
+  const hit = castRay(ex, ey, (p.z || 0) + STANCES[p.stance].eye, p.yaw, p.pitch, m.players.filter(o => o.alive && o.team !== p.team && !(o.fx.cloak > 0)).concat((m.decoys || []).filter(d => d.team !== p.team)), w.spread);   // cloaked players can't be locked onto; decoys can
   curLos = null;
   return hit && hit.along <= w.range ? hit : null;   // the shotgun doesn't fire at targets out of its range
 }
@@ -951,7 +1102,7 @@ const reached = (p, s, r) => Math.hypot(s[0] - p.x, s[1] - p.y) < r && Math.abs(
 function botThink(m, b) {
   const br = b.brain, inp = { mx: 0, my: 0, yaw: b.yaw, pitch: 0 };
   const goal = botGoal(m, b);
-  const foes = m.players.filter(o => o.alive && o.team !== b.team && !(o.fx.cloak > 0));   // bots can't see a cloaked ECHO
+  const foes = m.players.filter(o => o.alive && o.team !== b.team && !(o.fx.cloak > 0)).concat((m.decoys || []).filter(d => d.team !== b.team));   // bots can't see cloaked players, and fall for decoys
   // remember getting hit (to back off)
   if (br.lastHp != null && b.hp < br.lastHp) br.hurtT = 120;
   br.lastHp = b.hp;
@@ -1325,17 +1476,18 @@ function dummyThink(m, d) {
   return inp;
 }
 function createPractice(sendFn, name, look, op) {
+  useMap('arena');
   const client = { send: sendFn, name: String(name || 'PLAYER').slice(0, 12), look, match: null, player: null };
   const me = makePlayer('A', client.name, client, look, op);
   const players = [me];
   for (let i = 0; i < 6; i++) { const d = makePlayer('B', 'TARGET', null, DUMMY_LOOK); d.brain.dummy = true; players.push(d); }
-  const m = { mode: 'practice', practice: true, players, events: [], projectiles: [], fires: [], nextProj: 1, broken: new Set(), panelHp: new Map(),
+  const m = { mode: 'practice', map: 'arena', practice: true, players, events: [], projectiles: [], fires: [], nextProj: 1, broken: new Set(), panelHp: new Map(),
     score: { A: 0, B: 0 }, round: 1, phase: 'fight', phaseT: 0, tick: 0, over: false };
   const [sx, sy, syaw] = MAP.spawns.A[0];
   Object.assign(me, { x: sx, y: sy, yaw: syaw }); me.input.yaw = syaw;
   for (const d of players.slice(1)) placeDummy(m, d);
   client.match = m; client.player = me;
-  send(client, { t: 'match', mode: 'practice', practice: true, you: me.id, map: MAP, cfg: P, roundsToWin: 0, players: publicPlayers(m) });
+  send(client, { t: 'match', mode: 'practice', practice: true, you: me.id, map: 'arena', cfg: P, roundsToWin: 0, players: publicPlayers(m) });
   const timer = runClock(() => stepMatch(m));
   return { receive: msg => handlePlay(client, msg), stop() { clearInterval(timer); client.match = null; } };
 }
@@ -1422,6 +1574,7 @@ function stepExtraction(m) {
   if (m.cards) stepCards(m);
   const alive = m.players.filter(p => p.alive);
   if (g.state === 'home') {
+    { const gh = gemHome(); g.x = gh[0]; g.y = gh[1]; }   // it rides its car
     // attackers standing at the gem extract it; a defender in range blocks (contests) it
     const atk = alive.filter(p => p.team === A && Math.hypot(p.x - g.x, p.y - g.y) < X.extractR);
     const def = alive.some(p => p.team !== A && Math.hypot(p.x - g.x, p.y - g.y) < X.extractR);
@@ -1443,7 +1596,7 @@ function stepExtraction(m) {
   } else if (g.state === 'dropped') {
     const p = alive.find(o => Math.hypot(o.x - g.x, o.y - g.y) < X.pickR);
     if (p && p.team === A) { g.state = 'carried'; g.carrier = p.id; m.events.push(['gp', p.id]); }
-    else if (p) { Object.assign(g, { state: 'home', x: MAP.gem[0], y: MAP.gem[1], prog: 0 }); m.events.push(['gr', p.id]); }
+    else if (p) { const gh = gemHome(); Object.assign(g, { state: 'home', x: gh[0], y: gh[1], prog: 0 }); m.events.push(['gr', p.id]); }
   }
 }
 
@@ -1504,7 +1657,7 @@ function railSpot(p) {
   }
   return null;
 }
-function startMantle(p, spot) { p.dashT = 14; p.dashTo = spot; p.vaultZ = p.z || 0; p.vault = 14; p.rap = null; p.stance = 'stand'; }
+function startMantle(p, spot) { p.dashT = 14; p.dashTo = [spot[0], spot[1]]; p.vaultZ = spot[2] != null ? spot[2] : p.z || 0; p.vault = 14; p.rap = null; p.stance = 'stand'; }
 // WARDEN barrier placement: a wall across your view, a step ahead of you
 function barrierSeg(p) {
   const fx = Math.cos(p.yaw || 0), fy = Math.sin(p.yaw || 0), cx = p.x + fx * 40, cy = p.y + fy * 40, h = 34;
@@ -1527,12 +1680,42 @@ function barrierCanPlace(p, ownerId) {
   const mine = (curWalls || []).filter(w => w.owner === ownerId);
   return barrierFits(barrierSeg(p), curWalls, mine.length >= 3 ? mine[0] : null);
 }
+function makeDecoy(m, p, x, y, mode, life) {
+  return { id: m.nextProj++, owner: p.id, team: p.team, decoy: true, alive: true, bot: true, probe: true, fx: {}, spdMul: 1,
+    x, y, z: p.z || 0, vz: 0, yaw: p.yaw || 0, pitch: 0, stance: 'stand', running: false, slideT: 0, slideCd: 0, mode, life };
+}
+function popDecoy(m, d) { m.decoys = m.decoys.filter(o => o !== d); m.events.push(['dk', d.id, Math.round(d.x), Math.round(d.y), Math.round(d.z || 0)]); }
+function stepDecoys(m) {
+  for (const d of m.decoys.slice()) {
+    const o = m.players.find(q => q.id === d.owner);
+    if (--d.life <= 0 || !o || !o.alive) { m.decoys = m.decoys.filter(q => q !== d); m.events.push(['dx', d.id]); continue; }
+    if (d.mode === 'mimic') {   // copies your moves
+      const mv = o.lastMv || [0, 0, false, false, false];
+      d.yaw = o.yaw; d.pitch = o.pitch;
+      stepMovement(d, mv[0], mv[1], mv[2], mv[3], mv[4], m.phase !== 'countdown');
+    } else {   // runs ahead, turning when it hits something
+      const x0 = d.x, y0 = d.y;
+      stepMovement(d, Math.cos(d.yaw), Math.sin(d.yaw), true, false, true, true);
+      if (Math.hypot(d.x - x0, d.y - y0) < 0.5) d.yaw += (Math.random() < 0.5 ? 1 : -1) * (Math.PI / 2 + Math.random() * Math.PI / 2);
+    }
+  }
+}
+// spots around p where a decoy can stand
+function decoySpots(p, n, r) {
+  const out = [], z = p.z || 0;
+  for (let k = 0; k < n; k++) for (const rr of [r, r * 0.6, r * 0.35]) {
+    const a = (p.yaw || 0) + Math.PI / 2 + k / n * Math.PI * 2, x = p.x + Math.cos(a) * rr, y = p.y + Math.sin(a) * rr;
+    if (!blockedAt(x, y, P.r, z) && !stairBlocks(x, y, z) && Math.abs(supportAt(x, y, z + 2) - z) < 3) { out.push([x, y]); break; }
+  }
+  return out;
+}
 function useTac(m, p, mx, my) {
   const op = OPS[p.op];
   if (!op || !p.alive) return;
   if (p.vault) return;
   if (p.onLadder) { p.wantDrop = true; return; }   // Space on a ladder: let go
   { const rs = railSpot(p); if (rs) { startMantle(p, rs); m.events.push(['mt', p.id]); return; } }   // vault over a handrail
+  { const cs = carSpot(p); if (cs) { startMantle(p, cs); m.events.push(['mt', p.id]); return; } }   // climb onto a freight car
   if (p.op === 'warden') { const sp = mantleSpot(p, p.team); if (sp) { startMantle(p, sp); m.events.push(['mt', p.id]); return; } }   // vault over your barrier (no charge used)
   if (p.op === 'warden' && p.tacCh > 0 && !barrierCanPlace(p, p.id)) { m.events.push(['nofit', p.id]); return; }   // no stacking barriers
   if (op.tac.charges) { if (!(p.tacCh > 0)) return; p.tacCh--; if (p.tac <= 0) p.tac = op.tac.cd * 60; }
@@ -1543,6 +1726,8 @@ function useTac(m, p, mx, my) {
   else if (p.op === 'echo') for (const o of enemies) { if (Math.hypot(o.x - p.x, o.y - p.y) < 480) o.fx.reveal = Math.max(o.fx.reveal || 0, 420); }
   else if (p.op === 'haven') {
     for (const o of m.players) if (o.alive && o.team === p.team && Math.hypot(o.x - p.x, o.y - p.y) < 120) { o.hp = Math.min(P.hp, o.hp + 40); m.events.push(['hl', o.id]); }
+  } else if (p.op === 'mirage') {   // a decoy runs off the way you're facing
+    m.decoys.push(makeDecoy(m, p, p.x, p.y, 'run', 360));
   } else if (p.op === 'warden') {   // barrier: a wall across your view, a step ahead (your oldest goes if you already have 3)
     const mine = m.walls2.filter(w => w.owner === p.id);
     if (mine.length >= 3) m.walls2.splice(m.walls2.indexOf(mine[0]), 1);
@@ -1557,6 +1742,7 @@ function useUlt(m, p) {
   if (p.op === 'haven' && !down.length) return;   // nobody to bring back: keep the charge
   p.ult = 0;
   if (p.op === 'riot') p.fx.rampage = 420; else if (p.op === 'volt') { p.fx.cloak = 900; p.fx.phantom = 900; }   // PHANTOM: 15 s invisible and 50% faster (ends when you shoot an enemy)
+  else if (p.op === 'mirage') { for (const [x, y] of decoySpots(p, 5, 70)) m.decoys.push(makeDecoy(m, p, x, y, 'mimic', 600)); }   // MASQUERADE
   else if (p.op === 'echo') { p.fx.cloak = 300; for (const o of m.players) if (o.alive && o.team !== p.team) o.fx.reveal = Math.max(o.fx.reveal || 0, 900); }   // + 5 s invisible
   else if (p.op === 'haven') {   // every knocked-out teammate comes back next to you (their reboot cards are used up)
     for (const o of down) {
@@ -1610,6 +1796,14 @@ function switchWeapon(p, w) {
 
 function stepMatch(m) {
   m.tick++;
+  useMap(m.map || 'arena');
+  if (!m.decoys) m.decoys = [];
+  if (MAP.cars.length) {   // this match's trains (another match on the same map has its own)
+    if (!m.carY) m.carY = MAP.cars.map(cr => carY(cr, m.tick - 1));
+    MAP.cars.forEach((cr, k) => { cr.wall[1] = m.carY[k]; });
+    setCarTime(m.tick, [...m.players.filter(p => p.alive), ...m.decoys]);
+    m.carY = MAP.cars.map(cr => cr.wall[1]);
+  }
   curBroken = m.broken || null;   // collision for this match
   if (!m.railBroken) m.railBroken = new Set();
   curRailBroken = m.railBroken;
@@ -1647,6 +1841,7 @@ function stepMatch(m) {
       wants = p.throws.splice(0);
     }
     stepMovement(p, mx, my, run, crouch, runOk, m.phase !== 'countdown', !!p.ads);
+    p.lastMv = [mx, my, run, crouch, runOk];
     // Trust the player's own position when it's within a few steps of ours and not inside a wall, so
     // peeking a corner counts the moment they see around it (instead of a moment later on the server).
     if (p.claim) {
@@ -1713,8 +1908,11 @@ function stepMatch(m) {
       const ex = Math.round(ox + Math.cos(p.yaw) * d), ey = Math.round(oy + Math.sin(p.yaw) * d);
       const ez = Math.round(clamp(hit.h, (o.z || 0) + 2, (o.z || 0) + STANCES[o.stance].height));
       m.events.push(['s', p.id, p.burst, ex, ey, ez, W.code]);
-      if (p.fx.phantom > 0) { p.fx.phantom = 0; p.fx.cloak = 0; }   // VOLT's PHANTOM ends when you shoot an enemy
-      damage(m, o, weaponDamage(wn, d, hit.head), p, wn === 'shotgun' ? DMG_SRC.shotgun : DMG_SRC.gun, hit.head, ex, ey, ez);
+      if (o.decoy) popDecoy(m, o);   // a MIRAGE decoy: one hit pops it
+      else {
+        if (p.fx.phantom > 0) { p.fx.phantom = 0; p.fx.cloak = 0; }   // VOLT's PHANTOM ends when you shoot an enemy
+        damage(m, o, weaponDamage(wn, d, hit.head), p, wn === 'shotgun' ? DMG_SRC.shotgun : DMG_SRC.gun, hit.head, ex, ey, ez);
+      }
       // Players apply this same kick on their own computer when they get the 's' event
       if (p.bot && !(p.fx.rampage > 0)) { const k = weaponKick(wn, p.burst); p.pitch = Math.min(P.pitchMax, p.pitch + k.pitch); p.yaw = wrapAngle(p.yaw + k.yaw); }
       p.burst++;
@@ -1722,6 +1920,7 @@ function stepMatch(m) {
   }
   stepGrenades(m);
 
+  stepDecoys(m);
   if (m.phase === 'fight' && m.mode === 'extraction') stepExtraction(m);
   if (m.phase === 'fight' && m.mode === 'extraction') {
     if (!m.players.some(p => p.team === m.attack && p.alive)) endRound(m, m.attack === 'A' ? 'B' : 'A', 'wiped');
@@ -1744,6 +1943,7 @@ function stepMatch(m) {
         (p.fx.over > 0 ? 1 : 0) + (p.fx.rush > 0 ? 2 : 0) + (p.fx.reveal > 0 && !(p.fx.cloak > 0) ? 4 : 0) + (p.fx.slow > 0 ? 8 : 0) + (p.fx.rampage > 0 ? 16 : 0) + (p.fx.cloak > 0 ? 32 : 0) + (p.fx.phantom > 0 ? 64 : 0), OPS[p.op] && OPS[p.op].tac.charges ? p.tacCh : -1]),
       walls: (m.walls2 || []).map(w => [w.id, r1(w.x1), r1(w.y1), r1(w.x2), r1(w.y2), r1(w.z), w.hp, w.team]),
       traps: (m.traps || []).map(t => [t.id, r1(t.x), r1(t.y), r1(t.z), t.ceil ? 1 : 0, t.team]),
+      decoys: (m.decoys || []).map(d => [d.id, r1(d.x), r1(d.y), r1(d.z || 0), r3(d.yaw), d.owner, STANCE_CODE[d.stance] + (d.running ? 4 : 0), r3(d.pitch || 0)]),
       zones: (m.zones || []).map(z => [z.k, r1(z.x), r1(z.y), z.r, Math.ceil(z.t / 60), z.team]),
       proj: m.projectiles.map(pr => [pr.id, KIND_CODE[pr.kind], r1(pr.x), r1(pr.y), r1(pr.z), pr.team]),
       fires: m.fires.map(f => [f.id, Math.round(f.x1), Math.round(f.y1), Math.round(f.x2), Math.round(f.y2), f.t, f.team, Math.round(f.z || 0)]),
@@ -1762,11 +1962,12 @@ function connect(sendFn) {
     if (msg.name != null) client.name = String(msg.name || 'Player').replace(/[^\w \-]/g, '').slice(0, 12) || 'Player';
     if (msg.look) client.look = cleanLook(msg.look);
     if (msg.op && OPS[msg.op]) client.op = msg.op;
+    if (msg.map != null) client.mapPref = MAPS[msg.map] ? msg.map : null;   // 'arena', 'yard' or any
   };
   return {
     receive(msg) {
       if (!msg || typeof msg !== 'object') return;
-      if (msg.name != null || msg.look) setProfile(msg);
+      if (msg.name != null || msg.look || msg.map != null) setProfile(msg);
       if (msg.t === 'queue' && MODES[msg.mode] && !client.match) {
         const pt = client.pt;
         if (pt && pt.leader !== client) { send(client, { t: 'party_err', text: 'Only the party leader can start a match' }); return; }
@@ -1828,5 +2029,5 @@ function start(opts = {}) {
 
 // identifies the map, so a client only plays on a server with the same one
 const MAP_ID = MAP.w + 'x' + MAP.h + '-' + MAP.walls.length + '-' + UP.ladders.length;
-return { barrierCanPlace, TRAP_R, setRailBroken, railSpot, mantleSpot, startMantle, OPS, OP_LIST, setZones, setWalls, setLosTeam, BARRIER_H, startDash, MAP_ID, slabRects, onSlab, ladderAt, rappelSpot, connect, start, tick, matchmake, createPractice, MAP, P, LOOK_SIZES, STANCES, KINDS, recoilKick, blocked, lineOfSight, stepMovement, castRay, predictThrow, segmentClear, eyePos, setBroken, panelUnder, EXTRACT, MODES, clear3, supportAt, blockedAt, stairBlocks, rampAt, _matches: matches, WEAPONS, WEAPON_BY_CODE, weaponDamage, weaponKick, get botFillMs() { return BOT_FILL_MS; } };
+return { useMap, MAPS, setCarTime, carSpot, gemHome, get mapId() { return curMapId; }, barrierCanPlace, TRAP_R, setRailBroken, railSpot, mantleSpot, startMantle, OPS, OP_LIST, setZones, setWalls, setLosTeam, BARRIER_H, startDash, MAP_ID, slabRects, onSlab, ladderAt, rappelSpot, connect, start, tick, matchmake, createPractice, MAP, P, LOOK_SIZES, STANCES, KINDS, recoilKick, blocked, lineOfSight, stepMovement, castRay, predictThrow, segmentClear, eyePos, setBroken, panelUnder, EXTRACT, MODES, clear3, supportAt, blockedAt, stairBlocks, rampAt, _matches: matches, WEAPONS, WEAPON_BY_CODE, weaponDamage, weaponKick, get botFillMs() { return BOT_FILL_MS; } };
 });

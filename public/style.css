@@ -362,3 +362,15 @@ table.board td.k { text-align: right; }
   background: conic-gradient(#ffd23f var(--p, 0%), rgba(255, 210, 63, 0.15) 0); -webkit-mask: radial-gradient(circle, transparent 52px, #000 53px); mask: radial-gradient(circle, transparent 52px, #000 53px); }
 #mark-ring span { position: absolute; top: 128px; left: 50%; transform: translateX(-50%); white-space: nowrap; font-family: var(--font-display); color: #ffd23f; letter-spacing: 2px; font-size: 16px; text-shadow: 2px 2px 0 rgba(0,0,0,0.7); }
 
+
+/* killcam + play of the game */
+#replay { position: fixed; left: 50%; top: max(14px, env(safe-area-inset-top, 0px)); transform: translateX(-50%); z-index: 13; pointer-events: none;
+  text-align: center; font-family: var(--font-display); background: rgba(8,10,16,0.72); border: 2px solid var(--pink); padding: 6px 22px 8px; min-width: min(360px, calc(100vw - 32px)); }
+#replay .rec { display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 30px; letter-spacing: 4px; color: #fff; }
+#replay .rec i { width: 12px; height: 12px; border-radius: 50%; background: #ff2244; animation: recblink 1s steps(2) infinite; }
+#replay span { display: block; font-size: 17px; letter-spacing: 2px; color: var(--yellow); margin-top: 2px; }
+#replay .bar { height: 3px; background: rgba(255,255,255,0.15); margin: 6px 0 4px; }
+#replay .bar > div { height: 100%; width: 0; background: var(--pink); }
+#replay small { font-size: 11px; letter-spacing: 3px; color: var(--muted); }
+@keyframes recblink { 50% { opacity: 0.2; } }
+.map-sub { font-size: 12px; margin-top: 4px; }

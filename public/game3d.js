@@ -20,7 +20,7 @@
     set(k, v) { try { localStorage.setItem('fragout-' + k, JSON.stringify(v)); } catch { /* storage blocked */ } },
   };
   const profile = Object.assign({ name: '', optic: 'hog', op: 'riot', look: { jacket: 0, pants: 0, head: 4, headColor: 0, skin: 0 } }, store.get('profile', {}));
-  const settings = Object.assign({ quality: 'medium', sound: true, fps: false }, store.get('settings', {}));
+  const settings = Object.assign({ quality: 'medium', sound: true, fps: false, map: 'any' }, store.get('settings', {}));
 
   // ---------- Renderer ----------
   const canvas = $('view');
@@ -34,7 +34,7 @@
   scene.fog = new THREE.Fog(0x17191e, 40, 120);
   const camera = new THREE.PerspectiveCamera(50, 1, 0.05, 200);
   camera.rotation.order = 'YXZ';
-  scene.add(new THREE.HemisphereLight(0xe8eaee, 0x3a3c42, 0.95));
+  const hemi = new THREE.HemisphereLight(0xe8eaee, 0x3a3c42, 0.95); scene.add(hemi);
   const sun = new THREE.DirectionalLight(0xffffff, 0.75);
   sun.position.set(-8, 20, 12); scene.add(sun);
 
@@ -80,19 +80,35 @@
   }
 
   const panelMeshes = new Map();   // wall index -> green panel mesh
+  let arenaGroup = null, builtMap = 'arena';
   function buildArena() {
-    const g = new THREE.Group();
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(160, 160), lam(0x202227));
+    const g = new THREE.Group(), night = MAP.theme === 'night';
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(160, 160), lam(night ? 0x121316 : 0x202227));
     ground.rotation.x = -Math.PI / 2; ground.position.set(CENTER.x, -0.02, CENTER.z); g.add(ground);
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(AW, AH), lam(0x3b3e45));
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(AW, AH), lam(night ? 0x34322e : 0x3b3e45));
     floor.rotation.x = -Math.PI / 2; floor.position.set(CENTER.x, 0, CENTER.z); g.add(floor);
 
-    // neon floor grid (one draw call)
-    const pts = [], step = 32 * S;
-    for (let x = step; x < AW; x += step) pts.push(x, 0.01, 0, x, 0.01, AH);
-    for (let z = step; z < AH; z += step) pts.push(0, 0.01, z, AW, 0.01, z);
-    const gridGeo = new THREE.BufferGeometry(); gridGeo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
-    g.add(new THREE.LineSegments(gridGeo, new THREE.LineBasicMaterial({ color: 0x52565e, transparent: true, opacity: 0.5 })));
+    if (!night) {   // neon floor grid (one draw call)
+      const pts = [], step = 32 * S;
+      for (let x = step; x < AW; x += step) pts.push(x, 0.01, 0, x, 0.01, AH);
+      for (let z = step; z < AH; z += step) pts.push(0, 0.01, z, AW, 0.01, z);
+      const gridGeo = new THREE.BufferGeometry(); gridGeo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+      g.add(new THREE.LineSegments(gridGeo, new THREE.LineBasicMaterial({ color: 0x52565e, transparent: true, opacity: 0.5 })));
+    }
+    if (MAP.tracks) {   // Train Yard: steel rails on wooden sleepers, a yellow line along each platform edge
+      const railM = lam(0x9aa0a8), sleeperM = lam(0x3d2e24), lineM = basic(0xd9c341);
+      for (const tx of MAP.tracks) {
+        for (const off of [-15, 15]) { const r = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.09, AH - 64 * S), railM); r.position.set((tx + off) * S, 0.045, CENTER.z); g.add(r); }
+        for (let y = 44; y < MAP.h - 40; y += 26) { const sl = new THREE.Mesh(new THREE.BoxGeometry(44 * S, 0.04, 0.24), sleeperM); sl.position.set(tx * S, 0.02, y * S); g.add(sl); }
+      }
+      for (const x of [596, MAP.w - 600]) { const l = new THREE.Mesh(new THREE.BoxGeometry(4 * S, 0.02, AH - 64 * S), lineM); l.position.set((x + 2) * S, 0.012, CENTER.z); g.add(l); }
+    }
+    for (const [lx, ly] of MAP.lamps || []) {   // lamp posts: a warm light head and a pool of light on the ground
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 5.2, 6), lam(0x2e3036)); pole.position.set(lx * S, 2.6, ly * S); g.add(pole);
+      const head = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.16, 0.3), basic(0xffd9a0)); head.position.set(lx * S, 5.2, ly * S); g.add(head);
+      const pool = new THREE.Mesh(new THREE.CircleGeometry(3.2, 16), basic(0xffc870, { transparent: true, opacity: 0.1, depthWrite: false }));
+      pool.rotation.x = -Math.PI / 2; pool.position.set(lx * S, 0.015, ly * S); g.add(pool);
+    }
 
     for (const t of ['A', 'B']) for (const [x, y] of MAP.spawns[t]) {
       const pad = new THREE.Mesh(new THREE.RingGeometry(0.7, 0.95, 6), basic(TEAM[t].hex, { transparent: true, opacity: 0.35, depthWrite: false }));
@@ -106,6 +122,7 @@
     const VH = CP.ventH * S, ventDark = lam(0x0e0f12), ventBars = [];
     const FZ0 = MAP.upper.floor * S;
     MAP.walls.forEach(([x, y, w, h, tall, lvl], i) => {
+      if (tall === 4) return;   // freight cars are drawn separately (they move)
       const Y0 = lvl ? FZ0 : 0;
       if (tall === 3) {   // green wood panel (breakable): planks + darker frame lines
         const mat = lam(0x4f8f45);
@@ -246,7 +263,57 @@
     // Speed: the map is hundreds of small boxes. Merge every piece that never changes into one mesh per
     // material (breakable panels stay separate), so the graphics chip gets a few dozen draw calls, not ~800.
     mergeStatic(g, new Set([...panelMeshes.values()].map(p => p.mesh)));
-    scene.add(g);
+    scene.add(g); arenaGroup = g;
+  }
+  // freight cars: one merged mesh each, moved every frame
+  let carMeshes = [], clientCarY = null;
+  function buildCars() {
+    for (const cm of carMeshes) scene.remove(cm.g);
+    carMeshes = [];
+    for (const cr of MAP.cars || []) {
+      const [, , w, len, , , h] = cr.wall, W2 = w * S, L = len * S, H2 = h * S, g = new THREE.Group(), col = cr.train.color;
+      const body = new THREE.Mesh(new THREE.BoxGeometry(W2, H2 - 0.25, L), lam(col)); body.position.y = 0.25 + (H2 - 0.25) / 2; g.add(body);
+      const roof = new THREE.Mesh(new THREE.BoxGeometry(W2 + 0.04, 0.06, L + 0.04), lam(cr.train.gem ? 0x55595f : 0x3a3d44)); roof.position.y = H2; g.add(roof);
+      const base = new THREE.Mesh(new THREE.BoxGeometry(W2 * 0.8, 0.25, L * 0.92), lam(0x1d1e22)); base.position.y = 0.125; g.add(base);
+      for (const zz of [-0.36, 0.36]) for (const xx of [-1, 1]) {   // wheels
+        const wh = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.1, 8), lam(0x15161a)); wh.rotation.z = Math.PI / 2; wh.position.set(xx * W2 * 0.42, 0.2, zz * L); g.add(wh);
+      }
+      if (!cr.train.gem) {   // boxcar ribs and a door
+        for (let k = 1; k < 6; k++) for (const xx of [-1, 1]) { const rib = new THREE.Mesh(new THREE.BoxGeometry(0.04, H2 - 0.3, 0.06), lam(0x2a2b30)); rib.position.set(xx * (W2 / 2 + 0.02), 0.25 + (H2 - 0.3) / 2, -L / 2 + L * k / 6); g.add(rib); }
+        for (const xx of [-1, 1]) { const door = new THREE.Mesh(new THREE.BoxGeometry(0.03, H2 * 0.7, L * 0.25), lam(0x4a4d55)); door.position.set(xx * (W2 / 2 + 0.03), 0.25 + H2 * 0.38, 0); g.add(door); }
+      } else {   // flatbed: a pedestal for the gem
+        const ped = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.55, 0.25, 8), lam(0x55595f)); ped.position.y = H2 + 0.12; g.add(ped);
+      }
+      mergeStatic(g, new Set());
+      scene.add(g); carMeshes.push({ cr, g });
+    }
+  }
+  function updateCars(now) {
+    if (!(MAP.cars && MAP.cars.length) || !curState) return;
+    // this computer keeps its own copy of where the trains are (the offline game core keeps its own)
+    if (clientCarY) MAP.cars.forEach((cr, k) => { cr.wall[1] = clientCarY[k]; });
+    const est = replay && replay.tick != null ? replay.tick : curState.tick + Math.min(10, (now - curAt) / (1000 / 60));
+    Core.setCarTime(est, me.alive && !replay ? [me] : []);
+    clientCarY = MAP.cars.map(cr => cr.wall[1]);
+    for (const cm of carMeshes) { const w = cm.cr.wall; cm.g.position.set((w[0] + w[2] / 2) * S, 0, (w[1] + w[3] / 2) * S); }
+  }
+  // night sky for the Train Yard, the overcast grey for the arena
+  function applyTheme() {
+    const night = MAP.theme === 'night', bg = night ? 0x06080e : 0x17191e;
+    scene.background.setHex(bg); scene.fog.color.setHex(bg); scene.fog.near = night ? 24 : 40; scene.fog.far = night ? 95 : 120;
+    hemi.intensity = night ? 0.8 : 0.95; hemi.color.setHex(night ? 0xbcc8ff : 0xe8eaee); sun.intensity = night ? 0.4 : 0.75;
+  }
+  // switch the 3D world to another map (rebuilt only when it changes)
+  function setArena(id) {
+    Core.useMap(id);
+    if (builtMap === Core.mapId) return;
+    builtMap = Core.mapId;
+    if (arenaGroup) { scene.remove(arenaGroup); arenaGroup.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
+    panelMeshes.clear(); railBrokenKey = '#';
+    buildArena(); buildCars(); applyTheme();
+    pedestalGem.visible = !(MAP.gemCar >= 0);
+    pedestalGem.position.set(MAP.gem[0] * S, 0.2, MAP.gem[1] * S);
+    slabsMM = Core.slabRects(); clientCarY = null;
   }
   // handrails: drawn as one merged mesh (rebuilt only if the set of rails changes)
   const railParts = [], railGlassMat = basic(0x9fd8ff, { transparent: true, opacity: 0.22, depthWrite: false }), railBarMat = lam(0x9aa0a8);
@@ -584,6 +651,7 @@
     } else if (el.dataset.set) {
       const k = el.dataset.set;
       if (k === 'quality') { const q = ['low', 'medium', 'high']; settings.quality = q[(q.indexOf(settings.quality) + d + 3) % 3]; resize(); }
+      else if (k === 'map') { const q = ['any', 'arena', 'yard']; settings.map = q[(Math.max(0, q.indexOf(settings.map)) + d + 3) % 3]; }
       else settings[k] = !settings[k];
       store.set('settings', settings); refreshSettings();
     }
@@ -718,8 +786,9 @@
     } else placeTag(myTag, 0, 0, 0, false);
   }
   function refreshSettings() {
-    const label = { quality: settings.quality.toUpperCase(), sound: settings.sound ? 'ON' : 'OFF', fps: settings.fps ? 'ON' : 'OFF' };
-    for (const row of document.querySelectorAll('#screen-settings [data-set]')) row.querySelector('.val').textContent = `◀ ${label[row.dataset.set]} ▶`;
+    const label = { quality: settings.quality.toUpperCase(), sound: settings.sound ? 'ON' : 'OFF', fps: settings.fps ? 'ON' : 'OFF',
+      map: { any: 'ANY', arena: 'ARENA', yard: 'TRAIN YARD' }[settings.map] || 'ANY' };
+    for (const row of document.querySelectorAll('[data-set]')) row.querySelector('.val').textContent = `◀ ${label[row.dataset.set]} ▶`;
     $('fps').hidden = !settings.fps;
   }
 
@@ -739,6 +808,7 @@
       return; // other keys type into the name box
     }
     if (BLOCK.has(e.code)) e.preventDefault();
+    if (replay && (ui === 'game' || ui === 'practice') && (e.code === 'Enter' || e.code === 'NumpadEnter')) { e.preventDefault(); endReplay(); return; }   // skip a replay
     // double-tap W to run (like Minecraft): a second W press within 300 ms starts running until W is let go
     if (e.code === 'KeyW' && !e.repeat) { const t = performance.now(); if (t - lastWTap < 300) sprintLatch = true; lastWTap = t; }
     keys.add(e.code); tapped.add(e.code);
@@ -848,7 +918,7 @@
     if (!connected) { toast('Connecting to the server…'); return; }
     if (party && party.code && !party.leader) { sfx.denied(); toast('Waiting for the party leader to start a match'); show('party'); return; }
     if (mode === '2v2' && !(party && party.code)) { sfx.denied(); toast('2v2 is for parties: make one with PARTY on the main menu'); show('mode'); return; }
-    send({ t: 'queue', mode, name: profile.name || 'PLAYER', look: profile.look, op: profile.op });
+    send({ t: 'queue', mode, name: profile.name || 'PLAYER', look: profile.look, op: profile.op, map: settings.map || 'any' });
     enterQueue(mode);
   }
   function enterQueue(mode) {
@@ -870,6 +940,8 @@
   function clearMatch() {
     clearTimeout(endTimer);
     for (const a of actors.values()) { scene.remove(a.ch.root); a.ch.dispose(); a.label.remove(); if (a.rope) scene.remove(a.rope); }
+    for (const id of [...decoyActs.keys()]) removeDecoy(id);
+    replay = null; replayView = null; $('replay').hidden = true; tape.length = 0; koLog.length = 0; shotBuf = []; tapeN = 0;
     me.rap = null; me.onLadder = false; me.wantRap = false;
     actors.clear(); match = null; prevState = curState = null; matchOver = false;
     vmScene.remove(vm.group); $('feed').innerHTML = '';
@@ -893,6 +965,7 @@
     if (!msg.practice) stopPractice();   // a real match replaces the practice range
     clearMatch();
     match = msg; matchOver = false; lastPhase = ''; lastRound = 0;
+    setArena(msg.map || 'arena'); clientCarY = null;
     const mine = msg.players.find(p => p.id === msg.you);
     me.op = mine.op || profile.op; me.tacLeft = 0; me.ultPct = 0; me.spdMul = 1; me.dashT = 0; me.dashTo = null; me.mark = null; me.dashAnim = null;
     match.myTeam = mine.team;
@@ -913,6 +986,47 @@
     myCd = { boom: 0, frag: 0, therm: 0 };
     me.weapon = 'rifle'; me.switchUntil = 0; updateWeaponHud();   // every match starts on the rifle
     show(msg.practice ? 'practice' : 'game');
+  }
+
+  // MIRAGE decoys: look exactly like their owner (name tag and health bar too; teammates see "DECOY")
+  const decoyActs = new Map();
+  function removeDecoy(id) { const act = decoyActs.get(id); if (!act) return; scene.remove(act.ch.root); act.ch.dispose(); act.label.remove(); decoyActs.delete(id); }
+  function updateDecoys(list, prevList, a, dt, quiet) {
+    const seen = new Set(), prev = new Map((prevList || []).map(d => [d[0], d]));
+    for (const d of list || []) {
+      const owner = actors.get(d[5]); if (!owner) continue;
+      seen.add(d[0]);
+      let act = decoyActs.get(d[0]);
+      if (!act) {
+        const ch = Chars.buildCharacter(owner.info.look, TEAM[owner.info.team].hex); scene.add(ch.root);
+        act = { ch, label: makeLabel(), x: 0, z: 0, speed: 0, yaw: Math.PI / 2 - d[4], placed: false, sx: d[1], sy: d[2], sz: d[3], alive: true, stance: 'stand', decoy: true };
+        applyInfo(act, owner.info);
+        if (owner.info.team === match.myTeam) act.label.querySelector('.n').textContent = owner.info.name + ' · DECOY';
+        decoyActs.set(d[0], act);
+      }
+      const q = prev.get(d[0]) || d;
+      act.sx = q[1] + (d[1] - q[1]) * a; act.sy = q[2] + (d[2] - q[2]) * a; act.sz = q[3] + (d[3] - q[3]) * a;
+      act.stance = ['stand', 'crouch', 'slide'][d[6] & 3] || 'stand';
+      const x = act.sx * S, z = act.sy * S;
+      if (!act.placed) { act.x = x; act.z = z; act.placed = true; }
+      act.speed = act.speed * 0.8 + Math.min(Math.hypot(x - act.x, z - act.z) / Math.max(dt, 1e-3), 8) * 0.2;
+      act.x = x; act.z = z;
+      act.ch.root.position.set(x, act.sz * S, z);
+      act.yaw = lerpAngle(act.yaw, Math.PI / 2 - d[4], Math.min(1, dt * 18)); act.ch.root.rotation.y = act.yaw;
+      Chars.animateCharacter(act.ch, dt, act.speed, true, d[7] || 0, act.stance, 0);
+      if (quiet) { act.label.style.display = 'none'; continue; }
+      proj.set(x, 2.05 + act.sz * S, z).project(camera);
+      const sees = owner.info.team === match.myTeam || !me.alive || Core.lineOfSight(me.x, me.y, act.sx, act.sy, (me.z || 0) + 33, act.sz + 33);
+      const vis = proj.z < 1 && sees;
+      act.label.style.display = vis ? '' : 'none';
+      if (vis) {
+        act.label.style.left = `${(proj.x * 0.5 + 0.5) * innerWidth}px`;
+        act.label.style.top = `${(-proj.y * 0.5 + 0.5) * innerHeight}px`;
+        const row = curState && curState.players.find(p => p[0] === d[5]);
+        act.label.querySelector('.bar > div').style.width = `${row ? row[3] : 100}%`;
+      }
+    }
+    for (const id of [...decoyActs.keys()]) if (!seen.has(id)) removeDecoy(id);
   }
 
   function addFeed(killer, victim, head, src = 0) {
@@ -948,7 +1062,11 @@
       const won = msg.winner && msg.winner === msg.youTeam;
       if (msg.winner) (won ? sfx.win : sfx.lose)();
       announce(msg.winner ? (won ? 'VICTORY' : 'DEFEAT') : 'MATCH OVER', '', won ? 'var(--good)' : 'var(--team-b)', 1400);
-      endTimer = setTimeout(() => showEnd(msg), 1500);
+      endReplay();
+      endTimer = setTimeout(() => {   // play of the game first (Enter skips), then the scoreboard
+        const pg = !match.practice && findPotg();
+        if (pg) startReplay(Object.assign(pg, { then: () => { if (match) showEnd(msg); } })); else showEnd(msg);
+      }, 1500);
     }
   }
 
@@ -967,8 +1085,105 @@
   }
 
   const vFrom = new THREE.Vector3(), vTo = new THREE.Vector3(), tmpV2 = new THREE.Vector3(), tmpV3 = new THREE.Vector3();
+  // ---------- Replays: killcam and play of the game ----------
+  // Every match is taped on this computer (15 snapshots a second: where everyone is and where they look, plus
+  // every shot). Knocked out by someone: see the last 4 s from their eyes. End of the match: the best streak of
+  // knockouts (most in 10 s) plays back from the eyes of whoever did it. Enter skips.
+  const tape = [], koLog = [];
+  let shotBuf = [], tapeN = 0, replay = null, replayView = null;
+  function recordTape(msg, now) {
+    if (match.practice) return;
+    for (const ev of msg.ev || []) {
+      if (ev[0] === 's') shotBuf.push([ev[1], ev[3], ev[4], ev[5], ev[6] || 0]);
+      else if (ev[0] === 'k') koLog.push({ at: now, killer: ev[1], victim: ev[2], head: ev[3] });
+    }
+    if (tapeN++ % 2) return;
+    tape.push({ at: now, tick: msg.tick, p: msg.players.map(r => [r[0], r[1], r[2], r[13] || 0, r[5], r[6], r[4], r[8], r[12], r[17] || 0]), d: (msg.decoys || []).map(d => d.slice()), s: shotBuf });
+    shotBuf = [];
+    while (tape.length && now - tape[0].at > 360000) tape.shift();   // keep the last 6 minutes
+  }
+  function startReplay(o) {
+    if (!tape.length) { if (o.then) o.then(); return; }
+    replay = Object.assign({ start: performance.now(), lastRt: o.from, i: 0, j: tape.findIndex(t => t.at > o.from) }, o);
+    if (replay.j < 0) replay.j = tape.length;
+    $('replay').hidden = false; $('replay-t').textContent = o.title; $('replay-s').textContent = o.sub;
+    for (const a of actors.values()) a.label.style.display = 'none';
+    lowerSight(); $('scope').classList.remove('on');
+  }
+  function endReplay() {
+    if (!replay) return;
+    const r = replay; replay = null; replayView = null; $('replay').hidden = true;
+    if (r.then) r.then();
+  }
+  function playReplay(dt, now) {
+    const r = replay, rt = r.from + (now - r.start);
+    if (rt >= r.to) { endReplay(); return; }
+    while (r.i < tape.length - 2 && tape[r.i + 1].at <= rt) r.i++;
+    const A = tape[r.i], B = tape[Math.min(r.i + 1, tape.length - 1)], k = B.at > A.at ? Math.max(0, Math.min(1, (rt - A.at) / (B.at - A.at))) : 0;
+    r.tick = A.tick + (B.tick - A.tick) * k;
+    const rowsB = new Map(B.p.map(p => [p[0], p]));
+    const povActor = actors.get(r.pov), povTeam = povActor ? povActor.info.team : null;
+    firstPerson = false; xrayOn = false; vm.group.visible = false;
+    $('reticle').hidden = true; $('move-tip').hidden = true;
+    for (const pa of A.p) {
+      const act = actors.get(pa[0]); if (!act) continue;
+      const pb = rowsB.get(pa[0]) || pa;
+      const x = pa[1] + (pb[1] - pa[1]) * k, y = pa[2] + (pb[2] - pa[2]) * k, z = pa[3] + (pb[3] - pa[3]) * k;
+      const yaw = lerpAngle(pa[4], pb[4], k), pitch = pa[5] + (pb[5] - pa[5]) * k, stance = ['stand', 'crouch', 'slide'][pa[7] & 3] || 'stand';
+      act.sx = x; act.sy = y; act.sz = z;
+      act.label.style.display = 'none';
+      if (pa[0] === r.pov) {   // we're looking through their eyes
+        act.ch.root.visible = false;
+        replayView = { pos: new THREE.Vector3(x * S, (z + Core.STANCES[stance].eye) * S, y * S), yaw, pitch };
+        continue;
+      }
+      const w = (pa[8] || 0) & 1 ? 'shotgun' : 'rifle';
+      if (act.weapon !== w) { act.weapon = w; act.ch.setWeapon(w); }
+      const sp = Math.hypot(pb[1] - pa[1], pb[2] - pa[2]) * S / Math.max(0.03, (B.at - A.at) / 1000);
+      act.x = x * S; act.z = y * S;
+      act.ch.root.position.set(x * S, z * S, y * S); act.ch.root.rotation.y = Math.PI / 2 - yaw;
+      act.ch.root.visible = !(((pa[9] || 0) & 32) && act.info.team !== povTeam);   // invisible to the other team
+      Chars.animateCharacter(act.ch, dt, Math.min(sp, 8), !!pa[6], pitch, stance, pa[7] & 16 ? -1 : pa[7] & 32 ? 1 : 0);
+    }
+    updateDecoys(B.d, A.d, k, dt, true);
+    // shots and knockouts on the tape since the last frame
+    while (r.j < tape.length && tape[r.j].at <= rt) {
+      for (const [id, ex, ey, ez, code] of tape[r.j].s) {
+        const a = actors.get(id); if (!a) continue;
+        vTo.set(ex * S, ez * S, ey * S);
+        if (id === r.pov && replayView) { vFrom.copy(replayView.pos); vFrom.y -= 0.18; } else a.ch.flash.parent.getWorldPosition(vFrom);
+        addTracer(vFrom, vTo, TEAM[a.info.team].tracer);
+        if (code === 1) sfx.shotgun(id === r.pov); else sfx.shoot(id === r.pov);
+      }
+      r.j++;
+    }
+    for (const ko of koLog) if (ko.at > r.lastRt && ko.at <= rt) {
+      const v = actors.get(ko.victim);
+      if (v) { burst(v.sx * S, 1 + v.sz * S, v.sy * S, TEAM[v.info.team].hex, 24, 3.5); burst(v.sx * S, 1 + v.sz * S, v.sy * S, 0xffffff, 8, 3); sfx.ko(); }
+    }
+    r.lastRt = rt;
+    $('replay-bar').style.width = `${Math.min(100, (rt - r.from) / (r.to - r.from) * 100)}%`;
+  }
+  // the best streak of the match: most knockouts within 10 s (headshots count a bit extra)
+  function findPotg() {
+    let best = null;
+    for (const k0 of koLog) {
+      if (!k0.killer || k0.killer === k0.victim || !actors.get(k0.killer)) continue;
+      const run = koLog.filter(k => k.killer === k0.killer && k.victim !== k.killer && k.at >= k0.at && k.at - k0.at <= 10000);
+      const score = run.length + run.filter(k => k.head).length * 0.5;
+      if (!best || score >= best.score) best = { score, run };
+    }
+    if (!best || !tape.length) return null;
+    const first = best.run[0].at, last = best.run[best.run.length - 1].at, n = best.run.length;
+    const to = Math.min(last + 1200, tape[tape.length - 1].at), from = Math.max(first - 2500, to - 9000, tape[0].at);
+    if (to - from < 1500) return null;
+    const who = actors.get(best.run[0].killer).info;
+    return { from, to, pov: best.run[0].killer, title: 'PLAY OF THE GAME', sub: `${who.name} · ${n} KNOCKOUT${n > 1 ? 'S' : ''}`, kind: 'potg' };
+  }
+
   function onState(msg) {
     const now = performance.now();
+    recordTape(msg, now);
     if (curAt) interval = interval * 0.9 + Math.min(100, now - curAt) * 0.1;
     prevState = curState; curState = msg; curAt = now;
     const row = msg.players.find(p => p[0] === match.you);
@@ -985,6 +1200,7 @@
     }
     if (row && row[4] && !me.alive) { me.x = row[1]; me.y = row[2]; me.z = row[13] || 0; me.vz = 0; me.yaw = row[5]; me.pitch = 0; }   // respawned
     if (row) me.alive = !!row[4];
+    if (replay && replay.kind === 'kill' && msg.phase === 'fight' && (me.alive || msg.round !== replay.round)) endReplay();   // plays on through the round-end and countdown, stops when the fight is back on
     if (row && !row[4] && row[14] > 0 && msg.phase === 'fight') announce(`RESPAWNING IN ${row[14]}`, 'back in the far corner of your base', 'var(--cyan)', 0);
     else if (row && !row[4] && msg.phase === 'fight' && msg.ex && msg.ex.attack === match.myTeam && !match.practice) {
       const card = (msg.ex.cards || []).find(c => c[0] === match.you), by = card && card[4] && actors.get(card[4]);
@@ -1016,6 +1232,8 @@
         if (ev[3] === 'volt' && ev[2] === 0 && a) burst(a.x, 1, a.z, 0xffd23f, 12, 3);
         continue;
       }
+      if (ev[0] === 'dk') { burst(ev[2] * S, (ev[4] || 0) * S + 1, ev[3] * S, 0xff8af0, 22, 3.2); sfx.bounce(); removeDecoy(ev[1]); continue; }   // a decoy popped
+      if (ev[0] === 'dx') { const d = decoyActs.get(ev[1]); if (d) burst(d.x, d.sz * S + 1, d.z, 0xff8af0, 10, 2); removeDecoy(ev[1]); continue; }
       if (ev[0] === 'wh') { burst(ev[2] * S, ev[4] * S, ev[3] * S, 0x9fd8ff, 6, 2); continue; }
       if (ev[0] === 'wb') { const b = barrierMeshes.get(ev[1]); if (b) burst(b.position.x, 1.2, b.position.z, 0x9fd8ff, 26, 4); sfx.boom(); continue; }
       if (ev[0] === 'tr') { burst(ev[1] * S, ev[3] * S + 0.5, ev[2] * S, 0xc0c4cc, 24, 4); if (ev[4] === match.you) { announce('SPIKE TRAP', 'you lost 80% of your health', 'var(--team-b)', 1000); } sfx.hurt(); continue; }
@@ -1061,6 +1279,10 @@
         burst(v.x, 1, v.z, 0xffffff, 8, 3);
         if (ev[1] === match.you) { announce(ev[3] ? 'HEADSHOT!' : ['KNOCKOUT!', 'BOOMERANG KO!', 'FRAGGED!', 'TORCHED!', 'SHOTGUNNED!'][ev[4] || 0], v.info.name, 'var(--yellow)', 800); flashClass($('hitmark'), 'kill', 300); }
         if (ev[2] === match.you) announce('KNOCKED OUT', 'spectating until the next round', 'var(--team-b)', 1600);
+        if (ev[2] === match.you && ev[1] && ev[1] !== match.you && !match.practice) {   // killcam: how they got you
+          const at = now, killer = ev[1], round = msg.round;
+          setTimeout(() => { if (match && !me.alive && !replay && !matchOver && round === lastRound) startReplay({ from: at - 3500, to: at + 600, pov: killer, title: 'KILLCAM', sub: k.info.name, kind: 'kill', round }); }, 900);
+        }
       }
     }
     // announcements from phase changes
@@ -1162,7 +1384,7 @@
   }
   function onTargetNow() {
     if (!curState || !me.alive) return false;
-    return !!rayHit([...actors.values()].filter(a => a.alive && a.info.team !== match.myTeam && !a.cloaked));
+    return !!rayHit([...actors.values()].filter(a => a.alive && a.info.team !== match.myTeam && !a.cloaked).concat([...decoyActs.values()].filter(d => d.info.team !== match.myTeam)));
   }
 
   // ---------- Practice range (while matchmaking) ----------
@@ -1373,6 +1595,7 @@
     const op = Core.OPS[me.op]; if (!op || !me.alive) return;
     if (me.onLadder) { me.tacN = (me.tacN || 0) + 1; me.wantDrop = true; return; }   // Space on a ladder: let go
     { const rs = Core.railSpot(me); if (rs) { me.tacN = (me.tacN || 0) + 1; Core.startMantle(me, rs); sfx.swap(); return; } }   // vault over a handrail
+    { const cs = Core.carSpot(me); if (cs) { me.tacN = (me.tacN || 0) + 1; Core.startMantle(me, cs); sfx.swap(); return; } }   // climb onto a freight car
     if (me.op === 'warden' && match) { const sp = Core.mantleSpot(me, match.myTeam); if (sp) { me.tacN = (me.tacN || 0) + 1; Core.startMantle(me, sp); sfx.swap(); return; } }   // vault over your barrier
     if (op.tac.charges ? !(me.tacCh > 0) : me.tacLeft > 0) { sfx.denied(); toast(`${op.tac.name} ready in ${me.tacLeft} s`); return; }
     me.tacN = (me.tacN || 0) + 1;
@@ -1717,6 +1940,7 @@
     $('carry-banner').hidden = !(state === 1 && carrier === match.you);
     // gem in the world: on its pedestal, above its carrier's head, or on the floor
     let wx = gx * S, wz = gy * S, wy = state === 0 ? 1.1 : 0.5;
+    if (state === 0 && MAP.gemCar >= 0) { const gh = Core.gemHome(); wx = gh[0] * S; wz = gh[1] * S; wy += MAP.cars[MAP.gemCar].wall[6] * S; }   // riding its flatbed
     if (state === 1) { const a = actors.get(carrier); if (a) { wx = a.x; wz = a.z; } wy = 2.4; }
     gemMesh.visible = !(state === 1 && carrier === match.you);
     gemMesh.position.set(wx, wy + Math.sin(now * 0.003) * 0.08, wz);
@@ -1736,6 +1960,9 @@
 
   function updateMatch(dt, now) {
     if (!curState) return;
+    setArena(match.map || 'arena');
+    updateCars(now);
+    if (replay) { playReplay(dt, now); sendInput(now); return; }
     Core.setBroken(brokenNow);   // your own movement/aim checks use the panels you can see broken
     updateExtraction(dt, now);
     const mv = controls(lastPad, dt);
@@ -1816,11 +2043,13 @@
       }
     }
 
+    updateDecoys(curState.decoys, prevState && prevState.decoys, a, dt);
+
     // hints: rappel when you face a gap upstairs, climb when you're at a ladder
     const tip = $('move-tip');
     if (me.alive && (ui === 'game' || ui === 'practice')) {
       const lad = Core.ladderAt(me.x, me.y);
-      tip.textContent = Core.railSpot(me) ? 'SPACE  VAULT OVER' : me.op === 'warden' && Core.mantleSpot(me, match.myTeam) ? 'SPACE  MANTLE OVER' : me.rap ? 'RAPPELLING · X LET GO' : Core.rappelSpot(me) ? 'X  RAPPEL DOWN' : lad ? (me.onLadder ? 'W / S  CLIMB · A / D OR SPACE  LET GO' : 'W  CLIMB LADDER') : '';
+      tip.textContent = Core.railSpot(me) ? 'SPACE  VAULT OVER' : Core.carSpot(me) ? 'SPACE  CLIMB ON' : me.op === 'warden' && Core.mantleSpot(me, match.myTeam) ? 'SPACE  MANTLE OVER' : me.rap ? 'RAPPELLING · X LET GO' : Core.rappelSpot(me) ? 'X  RAPPEL DOWN' : lad ? (me.onLadder ? 'W / S  CLIMB · A / D OR SPACE  LET GO' : 'W  CLIMB LADDER') : '';
       tip.hidden = !tip.textContent;
     } else tip.hidden = true;
 
@@ -1851,7 +2080,7 @@
   // minimap: walls, you and your teammates (enemies stay hidden)
   const mm = $('minimap'), mctx = mm.getContext('2d');
   let mmAt = 0;
-  const slabsMM = Core.slabRects();
+  let slabsMM = Core.slabRects();
   function drawMinimap(now) {
     if (now - mmAt < 90) return; mmAt = now;
     const k = mm.width / MAP.w;
@@ -1909,7 +2138,11 @@
     updateTracers(dt);
     updateBlasts(dt);
 
-    if (firstPerson) {
+    if (replayView) {
+      camPos.copy(replayView.pos); camera.position.copy(camPos);
+      camera.rotation.set(replayView.pitch, -replayView.yaw - Math.PI / 2, 0); setFov(72);
+      camLook.copy(camPos).add(camera.getWorldDirection(tmpV));
+    } else if (firstPerson) {
       // first person follows your view exactly (no smoothing, so aiming feels direct)
       camPos.copy(wantPos);
       camera.position.copy(camPos);

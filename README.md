@@ -213,3 +213,17 @@ Pick one in the LOCKER. Space = tactical (cooldown), Tab = ultimate (charges ove
 | ECHO | Recon | PULSE: highlight enemies within 20 m for 7 s (through walls) | SWEEP: highlight every enemy for 15 s, and turn invisible (no name tag) for the first 5 s |
 | HAVEN | Support | PATCH: heal you and nearby teammates 2 health | REBOOT: bring every knocked-out teammate back next to you |
 | WARDEN | Controller | BARRIER: place up to 3 walls; your team shoots through, enemies need 9 hits; Space up close to one mantles over it | SPIKE TRAP: on the floor or ceiling; an enemy walking over or under it loses 80% of their health |
+| MIRAGE | Trickster | DECOY: a copy of you runs ahead (your name tag, fools bots; one hit pops it) | MASQUERADE: 5 copies of you appear around you and copy your every move for 10 s |
+
+## Maps
+
+Pick one on the mode screen (MAP: ANY, ARENA or TRAIN YARD; ANY picks either). Practice is always the arena.
+
+- **ARENA**: two 2-storey concrete buildings around an open courtyard; stairs, ladders, gaps to rappel through.
+- **TRAIN YARD** (night): a station at each end with a raised walkway, freight trains rolling up and down in front of them (they block sight and shots and knock you off the track; Space at a car climbs onto its roof and you ride it), a bridge over the middle with a tunnel under it, and the gem rides a slow flatbed car up and down the middle track.
+
+## Replays
+
+- **Killcam**: when someone knocks you out, see the last 4 seconds from their eyes.
+- **Play of the game**: at the end of a match, the best streak (most knockouts in 10 s) plays back from the eyes of whoever did it.
+- Enter skips either one.
