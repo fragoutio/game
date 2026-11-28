@@ -832,7 +832,8 @@
         netBadge(); setTimeout(connect, Math.min(10000, 1500 + 1000 * tries++));
       };
       ws.onmessage = e => { const m = JSON.parse(e.data); if (m.t === 'online') {
-          onlineCount = m.n; serverOld = m.v !== Core.MAP_ID;
+          onlineCount = m.n; const was = serverOld; serverOld = m.v !== Core.REV;
+          if (serverOld && !was && ui === 'title') toast('The online server is running an older version: playing with bots until it updates');
           if (serverOld) { if (netMode !== 'offline' && !inOnlineMatch) netMode = 'offline'; }   // server not updated yet: bots only
           else if (netMode !== 'online' && !(match && !inOnlineMatch && ui !== 'title')) netMode = 'online';
           netBadge(); return;

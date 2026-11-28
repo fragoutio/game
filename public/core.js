@@ -1,8 +1,14 @@
 // fragout.io game core: arena, matchmaking (with bot fill), bots and the authoritative simulation.
 // Shared by the online server (server.js) and the offline test build (runs it inside the browser).
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory();
-  else root.FragoutCore = factory();
+  const core = factory();
+  // REV: a fingerprint of this game code. The page and the online server compare it, so a server still running
+  // older rules (abilities, movement...) is spotted and you play with bots on your own computer until it's updated.
+  let h = 0; const src = String(factory).replace(/s+/g, '');
+  for (let i = 0; i < src.length; i++) h = (h * 31 + src.charCodeAt(i)) | 0;
+  core.REV = core.MAP_ID + '/' + (h >>> 0).toString(36);
+  if (typeof module === 'object' && module.exports) module.exports = core;
+  else root.FragoutCore = core;
 })(typeof self !== 'undefined' ? self : this, function () {
 const TICK = 1000 / 60;
 const SEND_EVERY = 2; // broadcast state every 2 ticks (30 Hz)
