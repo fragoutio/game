@@ -224,6 +224,7 @@ Pick one on the mode screen (MAP: ANY, ARENA or TRAIN YARD; ANY picks either). P
 
 ## Replays
 
-- **Killcam**: when someone knocks you out, see the last 4 seconds from their eyes.
+- **Killcam** (1v1): when someone knocks you out, see the last 4 seconds from their eyes.
+- **Final killcam** (2v2 and Extraction): when a round ends with a team wiped out, everyone watches the last knockout.
 - **Play of the game**: at the end of a match, the best streak (most knockouts in 10 s) plays back from the eyes of whoever did it.
 - Enter skips either one.

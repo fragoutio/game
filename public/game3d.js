@@ -1200,7 +1200,7 @@
     }
     if (row && row[4] && !me.alive) { me.x = row[1]; me.y = row[2]; me.z = row[13] || 0; me.vz = 0; me.yaw = row[5]; me.pitch = 0; }   // respawned
     if (row) me.alive = !!row[4];
-    if (replay && replay.kind === 'kill' && msg.phase === 'fight' && (me.alive || msg.round !== replay.round)) endReplay();   // plays on through the round-end and countdown, stops when the fight is back on
+    if (replay && (replay.kind === 'kill' || replay.kind === 'final') && msg.phase === 'fight' && (me.alive || msg.round !== replay.round)) endReplay();   // plays on through the round-end and countdown, stops when the fight is back on
     if (row && !row[4] && row[14] > 0 && msg.phase === 'fight') announce(`RESPAWNING IN ${row[14]}`, 'back in the far corner of your base', 'var(--cyan)', 0);
     else if (row && !row[4] && msg.phase === 'fight' && msg.ex && msg.ex.attack === match.myTeam && !match.practice) {
       const card = (msg.ex.cards || []).find(c => c[0] === match.you), by = card && card[4] && actors.get(card[4]);
@@ -1279,7 +1279,7 @@
         burst(v.x, 1, v.z, 0xffffff, 8, 3);
         if (ev[1] === match.you) { announce(ev[3] ? 'HEADSHOT!' : ['KNOCKOUT!', 'BOOMERANG KO!', 'FRAGGED!', 'TORCHED!', 'SHOTGUNNED!'][ev[4] || 0], v.info.name, 'var(--yellow)', 800); flashClass($('hitmark'), 'kill', 300); }
         if (ev[2] === match.you) announce('KNOCKED OUT', 'spectating until the next round', 'var(--team-b)', 1600);
-        if (ev[2] === match.you && ev[1] && ev[1] !== match.you && !match.practice) {   // killcam: how they got you
+        if (ev[2] === match.you && ev[1] && ev[1] !== match.you && !match.practice && match.mode === '1v1') {   // killcam (1v1): how they got you
           const at = now, killer = ev[1], round = msg.round;
           setTimeout(() => { if (match && !me.alive && !replay && !matchOver && round === lastRound) startReplay({ from: at - 3500, to: at + 600, pov: killer, title: 'KILLCAM', sub: k.info.name, kind: 'kill', round }); }, 900);
         }
@@ -1291,6 +1291,12 @@
       if (lastPhase !== 'countdown' || n !== lastCount) { announce(String(n), msg.ex ? (msg.ex.attack === match.myTeam ? 'ATTACK · EXTRACT THE GEM' : 'DEFEND THE GEM') : (msg.round === 1 ? 'MATCH FOUND' : `ROUND ${msg.round}`), '', 0); sfx.count(); lastCount = n; }
     } else if (msg.phase === 'fight' && lastPhase === 'countdown') { announce('FIGHT!', '', 'var(--yellow)', 700); sfx.fight(); }
     else if (msg.phase === 'roundEnd' && lastPhase !== 'roundEnd') {
+      // team modes: when a round ends with a team wiped out, everyone watches the final kill
+      const fk = koLog[koLog.length - 1];
+      if (match.mode !== '1v1' && !match.practice && msg.roundReason === 'wiped' && fk && fk.killer && fk.killer !== fk.victim && now - fk.at < 3000 && actors.get(fk.killer)) {
+        const round = msg.round, killer = fk.killer, at = fk.at;
+        setTimeout(() => { if (match && !matchOver && round === lastRound) { endReplay(); startReplay({ from: at - 3500, to: at + 600, pov: killer, title: 'FINAL KILLCAM', sub: actors.get(killer) ? actors.get(killer).info.name : '', kind: 'final', round }); } }, 700);
+      }
       const w = msg.roundWinner;
       const why = { delivered: 'GEM DELIVERED', time: 'TIME RAN OUT', wiped: 'TEAM WIPED' }[msg.roundReason];
       announce(w ? `${TEAM[w].name} TAKES IT` : 'DRAW', msg.ex && why ? why : `ROUND ${msg.round}`, w ? TEAM[w].css : '', 2400);
